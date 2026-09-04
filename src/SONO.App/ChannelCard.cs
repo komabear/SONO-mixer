@@ -205,8 +205,9 @@ public class ChannelCard : Control
             if (_apps.Controls[i] is Label l && l.Tag is string exe && !desired.Contains(exe))
                 _apps.Controls.RemoveAt(i);
 
-        var existing = _apps.Controls.OfType<Label>().Where(l => l.Tag is string)
-            .ToDictionary(l => (string)l.Tag, StringComparer.OrdinalIgnoreCase);
+        var existing = new Dictionary<string, Label>(StringComparer.OrdinalIgnoreCase);
+        foreach (var l in _apps.Controls.OfType<Label>())
+            if (l.Tag is string ex) existing[ex] = l;
 
         foreach (var exe in desired)
         {

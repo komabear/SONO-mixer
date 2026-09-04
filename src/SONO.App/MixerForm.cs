@@ -358,7 +358,8 @@ public class MixerForm : Form
         pick.Controls.Add(combo);
         pick.Controls.Add(ok);
         pick.AcceptButton = ok;
-        if (pick.ShowDialog(this) == DialogResult.OK) AssignExe((string)combo.SelectedItem, channelId);
+        if (pick.ShowDialog(this) == DialogResult.OK && combo.SelectedItem is string chosen)
+            AssignExe(chosen, channelId);
     }
 
     private void FlowCardDrop(object? sender, DragEventArgs e)
