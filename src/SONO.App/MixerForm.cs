@@ -17,9 +17,10 @@ public class MixerForm : Form
     private readonly Label _status;
     private readonly FlowLayoutPanel _flow;
     private readonly FlowLayoutPanel _appList;
-    private bool _allowVisible;
+    private bool _allowClose;
     private bool _balloonShown;
     private string _hotkeyError = "";
+    private readonly bool _launchedAtBoot;
 
     public MixerForm(AudioEngine engine, HotkeyManager hotkeys, AppSettings settings, bool launchedAtBoot)
     {
@@ -182,7 +183,7 @@ public class MixerForm : Form
             _engine.Tick += snap => BeginInvoke(() => OnTick(snap));
             _engine.Start(600);
             RebindHotkeys();
-            if (_launchedAtBoot && _settings.StartMinimized && !_allowVisible) HideToTray(showBalloon: true);
+            if (_launchedAtBoot && _settings.StartMinimized) HideToTray(showBalloon: true);
         };
 
         FormClosing += (_, e) =>
@@ -198,20 +199,10 @@ public class MixerForm : Form
         Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) HideToTray(showBalloon: !_balloonShown); };
     }
 
-    private bool _allowClose;
-    private readonly bool _launchedAtBoot;
-
     // ---------- visibility / tray ----------
-
-    protected override void SetVisibleCore(bool value)
-    {
-        if (!_allowVisible && !IsHandleCreated) value = false;
-        base.SetVisibleCore(value);
-    }
 
     private void ShowWindow()
     {
-        _allowVisible = true;
         if (!Visible)
         {
             WindowState = FormWindowState.Normal;
