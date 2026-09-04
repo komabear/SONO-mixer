@@ -260,7 +260,7 @@ public class MixerForm : Form
         card.ExeRemoved += exe => { RemoveExeEverywhere(exe); Save(); _engine.ReconcileNow(); RefreshRows(_last!); };
         card.HotkeySet += (_, _, _) => { RebindHotkeys(); Save(); };
         card.DefinitionEdited += _ => Save();
-        card.HeaderDrag += () => card.DoDragDrop("SONO_CARD", DragDropEffects.Move);
+        card.HeaderDrag += () => card.DoDragDrop(new DataObject("SONO_CARD", card.ChannelId), DragDropEffects.Move);
         card.RemoveRequested += id => RemoveChannel(id);
         card.AddAppRequested += id => ShowAddAppDialog(id);
         _cards[def.Id] = card;

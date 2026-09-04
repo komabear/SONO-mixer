@@ -48,7 +48,7 @@ internal static class Chips
         {
             if (e.Button == MouseButtons.Left &&
                 Math.Abs(e.X - down.X) + Math.Abs(e.Y - down.Y) > 6)
-                l.DoDragDrop(exe, DragDropEffects.Move);
+                l.DoDragDrop(new DataObject(Format, exe), DragDropEffects.Move);
         };
         if (onRemove is not null) l.DoubleClick += (_, _) => onRemove(exe);
         return l;
