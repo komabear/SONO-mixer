@@ -28,7 +28,7 @@ internal static class Program
             catch { /* non-fatal */ }
         }
 
-        Application.Run(new MixerForm(engine, hotkeys, settings));
+        Application.Run(new MixerForm(engine, hotkeys, settings, autostartRequested));
         GC.KeepAlive(mutex);
     }
 }

@@ -21,11 +21,12 @@ public class MixerForm : Form
     private bool _balloonShown;
     private string _hotkeyError = "";
 
-    public MixerForm(AudioEngine engine, HotkeyManager hotkeys, AppSettings settings)
+    public MixerForm(AudioEngine engine, HotkeyManager hotkeys, AppSettings settings, bool launchedAtBoot)
     {
         _engine = engine;
         _hotkeys = hotkeys;
         _settings = settings;
+        _launchedAtBoot = launchedAtBoot;
 
         Text = "SONO Mixer";
         StartPosition = FormStartPosition.CenterScreen;
@@ -181,7 +182,7 @@ public class MixerForm : Form
             _engine.Tick += snap => BeginInvoke(() => OnTick(snap));
             _engine.Start(600);
             RebindHotkeys();
-            if (_settings.StartMinimized && !_allowVisible) HideToTray(showBalloon: true);
+            if (_launchedAtBoot && _settings.StartMinimized && !_allowVisible) HideToTray(showBalloon: true);
         };
 
         FormClosing += (_, e) =>
@@ -198,6 +199,7 @@ public class MixerForm : Form
     }
 
     private bool _allowClose;
+    private readonly bool _launchedAtBoot;
 
     // ---------- visibility / tray ----------
 
