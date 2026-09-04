@@ -40,7 +40,7 @@ internal static class Chips
             Tag = exe,
         };
         Tips.SetToolTip(l, exe + (onRemove is not null
-            ? "\nDrag to another channel · double-click to remove"
+            ? "\nDrag to another channel · click ✕ to remove"
             : "\nDrag onto a channel to assign it"));
         var down = Point.Empty;
         l.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) down = e.Location; };
@@ -50,7 +50,17 @@ internal static class Chips
                 Math.Abs(e.X - down.X) + Math.Abs(e.Y - down.Y) > 6)
                 l.DoDragDrop(new DataObject(Format, exe), DragDropEffects.Move);
         };
-        if (onRemove is not null) l.DoubleClick += (_, _) => onRemove(exe);
+        if (onRemove is not null)
+        {
+            l.DoubleClick += (_, _) => onRemove(exe);
+            // the trailing "✕" is a real click target: a click inside its zone removes instantly
+            l.MouseClick += (_, e) =>
+            {
+                if (e.Button != MouseButtons.Left) return;
+                int xW = TextRenderer.MeasureText("✕", l.Font).Width;
+                if (e.X >= l.Width - l.Padding.Right - xW - 2) onRemove(exe);
+            };
+        }
         return l;
     }
 }
