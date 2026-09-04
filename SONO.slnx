@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SONO.App/SONO.App.csproj" />
+    <Project Path="src/SONO.Core/SONO.Core.csproj" />
+    <Project Path="src/SONO.Probe/SONO.Probe.csproj" />
+  </Folder>
+</Solution>
