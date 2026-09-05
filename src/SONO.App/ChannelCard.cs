@@ -304,11 +304,6 @@ public class ChannelCard : Control
     private void ShowGearMenu()
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Rename…", null, (_, _) =>
-        {
-            var name = PromptDialog.Show(FindForm()!, "Rename channel", _def.Name);
-            if (!string.IsNullOrWhiteSpace(name)) { _def.Name = name.Trim(); _name.Text = _def.Name; DefinitionEdited?.Invoke(ChannelId); }
-        });
         menu.Items.Add("Color…", null, (_, _) =>
         {
             var colorMenu = new ContextMenuStrip();
@@ -326,7 +321,7 @@ public class ChannelCard : Control
     }
 }
 
-/// <summary>Tiny one-field modal input.</summary>
+/// <summary>Tiny one-field modal input — fixed dialog, dark material styling, never resizable.</summary>
 internal static class PromptDialog
 {
     public static string? Show(IWin32Window owner, string title, string initial)
@@ -334,18 +329,38 @@ internal static class PromptDialog
         using var form = new Form
         {
             Text = title,
-            FormBorderStyle = FormBorderStyle.FixedToolWindow,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
             StartPosition = FormStartPosition.CenterParent,
-            ClientSize = new Size(320, 92),
+            ClientSize = new Size(320, 96),
             MaximizeBox = false,
             MinimizeBox = false,
             ShowInTaskbar = false,
+            ShowIcon = false,
+            BackColor = Theme.Card,
         };
-        var box = new TextBox { Left = 12, Top = 14, Width = 294, Text = initial };
-        var ok = new Button { Text = "OK", Left = 231, Top = 48, Width = 75, DialogResult = DialogResult.OK };
+        var box = new TextBox
+        {
+            Left = 14, Top = 16, Width = 292,
+            Text = initial,
+            BackColor = Theme.Field,
+            ForeColor = Theme.Text,
+            BorderStyle = BorderStyle.None,
+            Font = new Font("Segoe UI", 10.5f),
+        };
+        var ok = new Button
+        {
+            Text = "OK", Left = 233, Top = 52, Width = 73, Height = 28,
+            DialogResult = DialogResult.OK,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Accent,
+            ForeColor = Theme.Bg,
+            Cursor = Cursors.Hand,
+        };
+        ok.FlatAppearance.BorderSize = 0;
         form.Controls.Add(box);
         form.Controls.Add(ok);
         form.AcceptButton = ok;
+        form.CancelButton = ok;
         return form.ShowDialog(owner) == DialogResult.OK && !string.IsNullOrWhiteSpace(box.Text) ? box.Text.Trim() : null;
     }
 }

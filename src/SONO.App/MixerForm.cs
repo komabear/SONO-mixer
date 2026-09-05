@@ -352,20 +352,32 @@ public class MixerForm : Form
         var pick = new Form
         {
             Text = "Add application",
-            FormBorderStyle = FormBorderStyle.FixedToolWindow,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
             StartPosition = FormStartPosition.CenterParent,
             ClientSize = new Size(340, 110),
             MaximizeBox = false,
             MinimizeBox = false,
             ShowInTaskbar = false,
+            ShowIcon = false,
+            BackColor = Theme.Card,
         };
-        var combo = new ComboBox { Left = 12, Top = 14, Width = 314, DropDownStyle = ComboBoxStyle.DropDownList };
+        var combo = new DarkComboBox { Left = 14, Top = 16, Width = 312 };
         combo.Items.AddRange(choices.ToArray());
         combo.SelectedIndex = 0;
-        var ok = new Button { Text = "Add", Left = 251, Top = 66, Width = 75, DialogResult = DialogResult.OK };
+        var ok = new Button
+        {
+            Text = "Add", Left = 253, Top = 62, Width = 73, Height = 28,
+            DialogResult = DialogResult.OK,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Accent,
+            ForeColor = Theme.Bg,
+            Cursor = Cursors.Hand,
+        };
+        ok.FlatAppearance.BorderSize = 0;
         pick.Controls.Add(combo);
         pick.Controls.Add(ok);
         pick.AcceptButton = ok;
+        pick.CancelButton = ok;
         if (pick.ShowDialog(this) == DialogResult.OK && combo.SelectedItem is string chosen)
             AssignExe(chosen, channelId);
     }
@@ -547,51 +559,6 @@ public class MixerForm : Form
             _outputPick.SelectedIndex = _outputIds.IndexOf(wanted);
         }
         finally { _suppressPick = false; }
-    }
-
-    private void ShowDevicePicker(string channelId)
-    {
-        var def = _settings.Channels.FirstOrDefault(c => c.Id == channelId);
-        if (def is null) return;
-        var renders = new MMDeviceEnumerator().EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToList();
-
-        var pick = new Form
-        {
-            Text = $"Output device — {def.Name}",
-            FormBorderStyle = FormBorderStyle.FixedToolWindow,
-            StartPosition = FormStartPosition.CenterParent,
-            ClientSize = new Size(430, 148),
-            MaximizeBox = false,
-            MinimizeBox = false,
-            ShowInTaskbar = false,
-        };
-        var lbl = new Label
-        {
-            Left = 12, Top = 10, Width = 406, Height = 42,
-            Text = "Playback device this channel captures — pick a Virtual Audio Cable \"Line\", then send apps to that Line in Windows sound settings. SONO mixes it into your real output.",
-        };
-        var combo = new ComboBox { Left = 12, Top = 56, Width = 406, DropDownStyle = ComboBoxStyle.DropDownList };
-        combo.Items.Add("(none — app-group mode only)");
-        var ids = new List<string?> { null };
-        foreach (var d in renders) { combo.Items.Add(d.FriendlyName); ids.Add(d.ID); }
-        combo.SelectedIndex = Math.Max(0, ids.FindIndex(x => x == def.DeviceId));
-        var ok = new Button { Text = "OK", Left = 343, Top = 104, Width = 75, DialogResult = DialogResult.OK };
-        pick.Controls.Add(lbl);
-        pick.Controls.Add(combo);
-        pick.Controls.Add(ok);
-        pick.AcceptButton = ok;
-        if (pick.ShowDialog(this) == DialogResult.OK)
-        {
-            def.DeviceId = ids[combo.SelectedIndex];
-            Save();
-            _routing.Rebuild(_settings.RealOutputId);
-            if (_routing.RealOutputId != _settings.RealOutputId)
-            {
-                _settings.RealOutputId = _routing.RealOutputId;
-                Save();
-            }
-            RefreshRoutingVolumes();
-        }
     }
 
     private void RefreshRoutingVolumes()
