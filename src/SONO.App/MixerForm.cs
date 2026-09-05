@@ -1,3 +1,4 @@
+using NAudio.CoreAudioApi;
 using SONO.Core.Audio;
 using SONO.Core.Settings;
 
@@ -9,6 +10,7 @@ public class MixerForm : Form
     private readonly AudioEngine _engine;
     private readonly HotkeyManager _hotkeys;
     private readonly AppSettings _settings;
+    private readonly RoutingEngine _routing = new();
     private readonly NotifyIcon _tray;
     private readonly System.Windows.Forms.Timer _reconcileDebounce;
     private readonly Dictionary<string, ChannelCard> _cards = new();
@@ -179,10 +181,19 @@ public class MixerForm : Form
         Load += (_, _) =>
         {
             BuildCards();
-            _engine.SetChannelSource(() => { lock (_settings) return _settings.Channels.ToList(); });
+            IReadOnlyList<ChannelDefinition> Snapshot() { lock (_settings) return _settings.Channels.ToList(); }
+            _engine.SetChannelSource(Snapshot);
             _engine.Tick += snap => BeginInvoke(() => OnTick(snap));
             _engine.Start(600);
+            _routing.SetChannelSource(Snapshot);
             RebindHotkeys();
+            SetupDefaultMappingIfNeeded();
+            _routing.Rebuild(_settings.RealOutputId);
+            if (_routing.RealOutputId != _settings.RealOutputId)
+            {
+                _settings.RealOutputId = _routing.RealOutputId;
+                Save();
+            }
             if (_launchedAtBoot && _settings.StartMinimized) HideToTray(showBalloon: true);
         };
 
@@ -253,9 +264,9 @@ public class MixerForm : Form
     private void CreateCard(ChannelDefinition def)
     {
         var card = new ChannelCard(def) { Size = new Size(248, 430), Margin = new Padding(8) };
-        card.VolumeLive += (_, _) => _reconcileDebounce.Start();
+        card.VolumeLive += (_, _) => { RefreshRoutingVolumes(); _reconcileDebounce.Start(); };
         card.VolumeCommitted += _ => { Save(); _engine.ReconcileNow(); };
-        card.MuteToggled += _ => { Save(); _engine.ReconcileNow(); };
+        card.MuteToggled += _ => { Save(); _engine.ReconcileNow(); RefreshRoutingVolumes(); };
         card.ExeDropped += (exe, chId) => AssignExe(exe, chId);
         card.ExeRemoved += exe => { RemoveExeEverywhere(exe); Save(); _engine.ReconcileNow(); RefreshRows(_last!); };
         card.HotkeySet += (_, _, _) => { RebindHotkeys(); Save(); };
@@ -263,6 +274,14 @@ public class MixerForm : Form
         card.HeaderDrag += () => card.DoDragDrop(new DataObject("SONO_CARD", card.ChannelId), DragDropEffects.Move);
         card.RemoveRequested += id => RemoveChannel(id);
         card.AddAppRequested += id => ShowAddAppDialog(id);
+        card.DevicePickRequested += id => ShowDevicePicker(id);
+        card.MakeDefaultRequested += id =>
+        {
+            var d = _settings.Channels.FirstOrDefault(c => c.Id == id);
+            if (d?.DeviceId is string did)
+                try { SONO.Core.Audio.PolicyConfigApi.SetDefaultDevice(did); }
+                catch (Exception ex) { MessageBox.Show(this, $"Could not set default device: {ex.Message}", "SONO"); }
+        };
         _cards[def.Id] = card;
         _flow.Controls.Add(card);
         _flow.Controls.SetChildIndex(card, _flow.Controls.Count - 2); // before the "+ New channel" button
@@ -460,16 +479,103 @@ public class MixerForm : Form
             ? $"⚠ {snap.Error}"
             : _hotkeyError is not ""
                 ? $"⚠ Hotkey: {_hotkeyError}"
-                : $"▶ {snap.OutputDevice}";
+                : $"▶ {snap.OutputDevice}{RoutingSuffix()}";
     }
+
+    private string RoutingSuffix() => _routing.Error is not null
+        ? $"  |  ⚠ routing: {_routing.Error}"
+        : _routing.ActiveStreams > 0
+            ? $"  |  routing {_routing.ActiveStreams} ch"
+            : "";
 
     private void UpdateCards(EngineSnapshot snap)
     {
         foreach (var (id, card) in _cards)
         {
+            var def = _settings.Channels.FirstOrDefault(c => c.Id == id);
+            card.SetDeviceLabel(def?.DeviceId is null ? null : DeviceName(def.DeviceId));
             var owned = snap.Sessions.Where(s => s.ChannelId == id).ToList();
-            card.Update(owned, snap.Mic?.DeviceName, _hotkeyError);
+            card.Update(owned, _hotkeyError);
         }
+    }
+
+    private readonly Dictionary<string, string> _deviceNames = new();
+    private string DeviceName(string? id)
+    {
+        if (id is null) return "";
+        if (_deviceNames.TryGetValue(id, out var n)) return n;
+        try
+        {
+            var d = new MMDeviceEnumerator().GetDevice(id);
+            _deviceNames[id] = d.FriendlyName;
+            return d.FriendlyName;
+        }
+        catch { return "?"; }
+    }
+
+    private void ShowDevicePicker(string channelId)
+    {
+        var def = _settings.Channels.FirstOrDefault(c => c.Id == channelId);
+        if (def is null) return;
+        var renders = new MMDeviceEnumerator().EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToList();
+
+        var pick = new Form
+        {
+            Text = $"Output device — {def.Name}",
+            FormBorderStyle = FormBorderStyle.FixedToolWindow,
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(430, 148),
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = false,
+        };
+        var lbl = new Label
+        {
+            Left = 12, Top = 10, Width = 406, Height = 42,
+            Text = "Playback device this channel captures — pick a Virtual Audio Cable \"Line\", then send apps to that Line in Windows sound settings. SONO mixes it into your real output.",
+        };
+        var combo = new ComboBox { Left = 12, Top = 56, Width = 406, DropDownStyle = ComboBoxStyle.DropDownList };
+        combo.Items.Add("(none — app-group mode only)");
+        var ids = new List<string?> { null };
+        foreach (var d in renders) { combo.Items.Add(d.FriendlyName); ids.Add(d.ID); }
+        combo.SelectedIndex = Math.Max(0, ids.FindIndex(x => x == def.DeviceId));
+        var ok = new Button { Text = "OK", Left = 343, Top = 104, Width = 75, DialogResult = DialogResult.OK };
+        pick.Controls.Add(lbl);
+        pick.Controls.Add(combo);
+        pick.Controls.Add(ok);
+        pick.AcceptButton = ok;
+        if (pick.ShowDialog(this) == DialogResult.OK)
+        {
+            def.DeviceId = ids[combo.SelectedIndex];
+            Save();
+            _routing.Rebuild(_settings.RealOutputId);
+            if (_routing.RealOutputId != _settings.RealOutputId)
+            {
+                _settings.RealOutputId = _routing.RealOutputId;
+                Save();
+            }
+            RefreshRoutingVolumes();
+        }
+    }
+
+    private void RefreshRoutingVolumes()
+    {
+        lock (_settings) _routing.ApplyVolumes(_settings.Channels.ToList());
+    }
+
+    /// <summary>First run with VAC present: map channels to Lines in order (Game→Line 1, …).</summary>
+    private void SetupDefaultMappingIfNeeded()
+    {
+        if (_settings.Channels.Any(c => c.DeviceId is not null)) return;
+        var lines = new MMDeviceEnumerator().EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
+            .Where(d => d.FriendlyName.Contains("Virtual Audio Cable", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(d => d.FriendlyName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (lines.Count == 0) return;
+        var groups = _settings.Channels.ToList();
+        for (int i = 0; i < groups.Count && i < lines.Count; i++)
+            groups[i].DeviceId = lines[i].ID;
+        Save();
     }
 
     private void RememberKnownApps(EngineSnapshot snap)
@@ -508,6 +614,7 @@ public class MixerForm : Form
             case HotkeySlot.Mute: def.Muted = !def.Muted; break;
         }
         _engine.ReconcileNow();
+        RefreshRoutingVolumes();
         if (_last is not null) UpdateCards(_last);
     }
 
@@ -520,6 +627,7 @@ public class MixerForm : Form
                 c.Muted = muted;
         Save();
         _engine.ReconcileNow();
+        RefreshRoutingVolumes();
         if (_last is not null) UpdateCards(_last);
     }
 
@@ -536,6 +644,7 @@ public class MixerForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        _routing.Dispose();
         _tray.Visible = false;
         _tray.Dispose();
         _reconcileDebounce.Dispose();

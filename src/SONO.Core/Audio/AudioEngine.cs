@@ -20,10 +20,6 @@ public sealed class AudioEngine : IDisposable
     private Func<IReadOnlyList<ChannelDefinition>>? _channelSource;
     private System.Threading.Timer? _timer;
     private MMDevice? _render;
-    private MMDevice? _capture;
-    private float _micOriginalVol = 1f;
-    private bool _micOriginalMute;
-    private bool _micTouched;
 
     public event Action<EngineSnapshot>? Tick;
 
@@ -50,7 +46,7 @@ public sealed class AudioEngine : IDisposable
     {
         EngineSnapshot snap;
         try { snap = Reconcile(_channelSource?.Invoke() ?? Array.Empty<ChannelDefinition>()); }
-        catch (Exception ex) { snap = new EngineSnapshot(Array.Empty<SessionView>(), null, "?", ex.Message); }
+        catch (Exception ex) { snap = new EngineSnapshot(Array.Empty<SessionView>(), "?", ex.Message); }
         Tick?.Invoke(snap);
     }
 
@@ -144,41 +140,13 @@ public sealed class AudioEngine : IDisposable
                     foreach (var dead in _touched.Keys.Where(k => !seen.Contains(k)).ToList())
                         _touched.Remove(dead);
 
-                // microphone channel → default capture endpoint
-                MicView? mic = null;
-                var micCh = channels.FirstOrDefault(c => c.Kind == ChannelKind.Mic);
-                if (micCh is not null)
-                {
-                    _capture ??= _enumerator.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console);
-                    var ep = _capture.AudioEndpointVolume;
-                    if (!_micTouched)
-                    {
-                        _micOriginalVol = ep.MasterVolumeLevelScalar;
-                        _micOriginalMute = ep.Mute;
-                        _micTouched = true;
-                    }
-                    if (Math.Abs(ep.MasterVolumeLevelScalar - micCh.Volume) > 0.001f) ep.MasterVolumeLevelScalar = micCh.Volume;
-                    if (ep.Mute != micCh.Muted) ep.Mute = micCh.Muted;
-                    mic = new MicView(true, _capture.FriendlyName, micCh.Volume, micCh.Muted);
-                }
-                else if (_micTouched && _capture is not null)
-                {
-                    try
-                    {
-                        _capture.AudioEndpointVolume.MasterVolumeLevelScalar = _micOriginalVol;
-                        _capture.AudioEndpointVolume.Mute = _micOriginalMute;
-                    }
-                    catch { }
-                    _micTouched = false;
-                }
-
-                return new EngineSnapshot(sessions, mic, outputName, null);
+                return new EngineSnapshot(sessions, outputName, null);
             }
             catch (Exception ex)
             {
                 error = ex.Message;
                 _render = null;   // device may have changed; retry from scratch next tick
-                return new EngineSnapshot(sessions, null, outputName, error);
+                return new EngineSnapshot(sessions, outputName, error);
             }
         }
     }
@@ -223,9 +191,7 @@ public sealed class AudioEngine : IDisposable
         {
             try { Reconcile(Array.Empty<ChannelDefinition>()); } catch { } // restore everything we touched
             _render?.Dispose();
-            _capture?.Dispose();
             _render = null;
-            _capture = null;
         }
     }
 }

@@ -23,10 +23,12 @@ public class ChannelCard : Control
     private readonly Button _gear;
     private readonly SliderBar _slider;
     private readonly Dictionary<HotkeySlot, HotkeyCaptureBox> _hotkeyBoxes = new();
-    private Label? _micChip;
+    private readonly Label _deviceChip;
 
     public string ChannelId => _def.Id;
-    public bool IsMic => _def.Kind == ChannelKind.Mic;
+
+    public event Action<string>? DevicePickRequested;
+    public event Action<string>? MakeDefaultRequested;
 
     public event Action<string, float>? VolumeLive;
     public event Action<string>? VolumeCommitted;
@@ -61,6 +63,19 @@ public class ChannelCard : Control
         };
         _name.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) HeaderDrag?.Invoke(); };
         Controls.Add(_name);
+
+        _deviceChip = new Label
+        {
+            Text = "no device",
+            AutoSize = true,
+            ForeColor = Theme.Muted,
+            BackColor = Theme.Chip,
+            Padding = new Padding(5, 3, 5, 3),
+            Location = new Point(Width - 190, 12),
+            Cursor = Cursors.Hand,
+        };
+        _deviceChip.Click += (_, _) => DevicePickRequested?.Invoke(ChannelId);
+        Controls.Add(_deviceChip);
 
         _gear = new Button
         {
@@ -163,37 +178,21 @@ public class ChannelCard : Control
     private static Color ColorOf(ChannelDefinition def) => ColorTranslator.FromHtml(def.ColorHex);
 
     /// <summary>Periodic refresh from the engine snapshot.</summary>
-    public void Update(IReadOnlyList<SessionView> owned, string? micDeviceName, string? hotkeyError)
+    public void Update(IReadOnlyList<SessionView> owned, string? hotkeyError)
     {
         _slider.SetValueExternal(_def.Volume);
         UpdateMute();
         UpdateDb();
         _name.Text = _def.Name;
         _slider.Fill = ColorOf(_def);
+        _deviceChip.Text = _def.DeviceId is null ? "no device" : _deviceLabel ?? "device ✓";
+        _deviceChip.ForeColor = _def.DeviceId is null ? Theme.Muted : Theme.Accent;
         Tips.SetToolTip(_gear, string.IsNullOrWhiteSpace(hotkeyError) ? "Channel settings" : "⚠ " + hotkeyError);
-
-        if (IsMic)
-        {
-            if (_micChip is null)
-            {
-                _micChip = new Label
-                {
-                    Text = "🎤",
-                    AutoSize = true,
-                    ForeColor = Theme.Text,
-                    BackColor = Theme.Chip,
-                    Padding = new Padding(7, 5, 7, 5),
-                    Margin = new Padding(3),
-                };
-                _apps.Controls.Add(_micChip);
-            }
-            _micChip.Text = "🎤 " + (micDeviceName ?? "no mic found");
-        }
-        else
-        {
-            DiffChips(owned);
-        }
+        DiffChips(owned);
     }
+
+    private string? _deviceLabel;
+    public void SetDeviceLabel(string? label) { _deviceLabel = label; }
 
     private void DiffChips(IReadOnlyList<SessionView> owned)
     {
@@ -254,6 +253,7 @@ public class ChannelCard : Control
         Region = new Region(SliderBar.RoundRect(0, 0, Width, Height, 10));
         _name.Width = Width - 70;
         _gear.Location = new Point(Width - 38, 9);
+        _deviceChip.Location = new Point(Width - _deviceChip.Width - 40, 12);
         _db.Width = Width - 114;
         _apps.Size = new Size(Width - 24, Height - 122 - 100);
         int y = Height - 96;
@@ -297,6 +297,9 @@ public class ChannelCard : Control
             }
             colorMenu.Show(Cursor.Position);
         });
+        menu.Items.Add("Output device…", null, (_, _) => DevicePickRequested?.Invoke(ChannelId));
+        if (_def.DeviceId is not null)
+            menu.Items.Add("Set device as Windows default", null, (_, _) => MakeDefaultRequested?.Invoke(ChannelId));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Remove channel…", null, (_, _) => RemoveRequested?.Invoke(ChannelId));
         menu.Show(_gear, new Point(0, _gear.Height));

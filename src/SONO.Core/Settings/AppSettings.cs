@@ -15,6 +15,9 @@ public sealed class AppSettings
 
     /// <summary>Apps ever seen live or added by hand, so they can be pre-assigned before running.</summary>
     public List<string> KnownApps { get; set; } = new();
+
+    /// <summary>Real output device the mixed channels play through (endpoint id).</summary>
+    public string? RealOutputId { get; set; }
     public List<ChannelDefinition> Channels { get; set; } = new();
 }
 
@@ -31,7 +34,14 @@ public static class SettingsStore
         try
         {
             if (File.Exists(FilePath))
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOpts) ?? Defaults();
+            {
+                var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOpts) ?? Defaults();
+                // migrate: mic channels removed in v0.2 (output-focused)
+                int before = s.Channels.Count;
+                s.Channels.RemoveAll(c => c.Kind != ChannelKind.Group);
+                if (s.Channels.Count != before) Save(s);
+                return s;
+            }
         }
         catch { /* corrupt file → fall through to defaults */ }
         var d = Defaults();
@@ -66,7 +76,6 @@ public static class SettingsStore
                 Mk("Chat", "#9ece6a", exes: "discord.exe"),
                 Mk("Media", "#bb9af7", exes: "spotify.exe"),
                 Mk("Aux", "#e0af68"),
-                Mk("Mic", "#f7768e", ChannelKind.Mic),
             },
         };
     }

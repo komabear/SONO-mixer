@@ -2,10 +2,8 @@ namespace SONO.Core.Audio;
 
 public enum ChannelKind
 {
-    /// <summary>A group that owns specific apps' audio sessions.</summary>
+    /// <summary>A channel: owns specific apps (group mode) and/or a playback device (routed mode).</summary>
     Group,
-    /// <summary>Controls the default capture (microphone) endpoint directly.</summary>
-    Mic,
 }
 
 /// <summary>Hotkey slots per channel. Order matters: HotkeyAction casts to this.</summary>
@@ -22,6 +20,9 @@ public sealed class ChannelDefinition
     public string Name { get; set; } = "New Channel";
     public ChannelKind Kind { get; set; } = ChannelKind.Group;
     public string ColorHex { get; set; } = "#7aa2f7";
+
+    /// <summary>Playback endpoint this channel captures (a VAC "Line N"). Null = session-ownership group mode.</summary>
+    public string? DeviceId { get; set; }
 
     /// <summary>Lower-case executable names assigned to this channel ("spotify.exe"). "system" = Windows sounds.</summary>
     public List<string> Executables { get; set; } = new();
