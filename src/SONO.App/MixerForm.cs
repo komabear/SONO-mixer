@@ -26,6 +26,7 @@ public class MixerForm : Form
     private bool _balloonShown;
     private string _hotkeyError = "";
     private readonly bool _launchedAtBoot;
+    private Image? _mascot;
 
     /// <summary>Raised when the UI must be recreated (theme change). Engine/routing/hotkeys are kept alive.</summary>
     public event Action? UiRestartRequested;
@@ -196,25 +197,24 @@ public class MixerForm : Form
         right.Controls.Add(_appList);
         right.Controls.Add(_status);
 
-        // theme mascot (e.g. Miku): pinned bottom-right via a resize handler — anchors are
-        // unreliable here because the panel still has a placeholder size during construction
+        // theme mascot (e.g. Miku): owner-drawn in the panel's Paint event → renders behind
+        // every child control, real per-pixel alpha (no WinForms fake-transparency issues),
+        // bottom-center, always above the status line.
         if (Theme.Current.ImagePath is string img)
         {
             var full = Path.Combine(AppContext.BaseDirectory, img);
             if (File.Exists(full))
             {
-                var mascot = new PictureBox
+                _mascot = Image.FromFile(full);
+                right.Paint += (_, e) =>
                 {
-                    Image = Image.FromFile(full),
-                    SizeMode = PictureBoxSizeMode.Zoom,
-                    Size = new Size(110, 110),
-                    BackColor = Color.Transparent,
+                    if (_mascot is null) return;
+                    int w = 150, h = (int)(150f * _mascot.Height / _mascot.Width);
+                    int x = (right.Width - w) / 2;
+                    int y = right.Height - h - 42;   // sits on the status line
+                    e.Graphics.DrawImage(_mascot, x, y, w, h);
                 };
-                void PlaceMascot() => mascot.Location = new Point(right.Width - 110 - 6, right.Height - 110 - 62);
-                right.Controls.Add(mascot);
-                right.Resize += (_, _) => PlaceMascot();
-                PlaceMascot();
-                mascot.BringToFront();
+                right.Resize += (_, _) => right.Invalidate();
             }
         }
         Controls.Add(right);
