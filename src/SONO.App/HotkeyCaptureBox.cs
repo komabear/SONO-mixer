@@ -19,6 +19,13 @@ public class HotkeyCaptureBox : TextBox
         PlaceholderText = "click, then press keys";
     }
 
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (Width <= 1 || Height <= 1) return;
+        Region = new Region(SliderBar.RoundRect(0, 0, Width, Height, Height / 2));  // pill-shaped field
+    }
+
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         if (!Focused || !Capturing) return base.ProcessCmdKey(ref msg, keyData);

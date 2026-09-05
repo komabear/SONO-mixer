@@ -22,6 +22,23 @@ public class SliderBar : Control
     public float Value => _val;
     public bool IsDragging => _drag;
 
+    private string? _toolTip;
+    private static readonly ToolTip Tips = new();
+    /// <summary>Static tooltip text. The live dB value is appended while dragging.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string? ToolTip
+    {
+        get => _toolTip;
+        set { _toolTip = value; if (value is not null && Parent is not null) Tips.SetToolTip(this, value); }
+    }
+
+    private void ShowDbTip()
+    {
+        if (Parent is null) return;
+        string db = _val <= 0.0005f ? "−∞ dB" : $"{20 * Math.Log10(_val),+0:0.0} dB";
+        Tips.SetToolTip(this, $"{_toolTip ?? "Volume"}: {db}");
+    }
+
     public SliderBar()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
@@ -92,6 +109,7 @@ public class SliderBar : Control
             _val = v;
             Invalidate();
             ValueChanged?.Invoke(v);
+            ShowDbTip();
         }
     }
 

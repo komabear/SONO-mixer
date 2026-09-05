@@ -15,12 +15,11 @@ public class ChannelCard : Control
     };
     private static readonly ToolTip Tips = new();
 
-    private const int HeaderH = 46, VolRowH = 52, HotkeyRowH = 30, CaptionH = 20;
+    private const int HeaderH = 42, VolRowH = 30, HotkeyRowH = 30;
 
     private readonly ChannelDefinition _def;
     private readonly FlowLayoutPanel _apps;
     private readonly Label _name;
-    private readonly Label _db;
     private readonly Button _mute;
     private readonly Button _gear;
     private readonly SliderBar _slider;
@@ -47,10 +46,11 @@ public class ChannelCard : Control
         Padding = new Padding(12);
         var accent = ColorOf(def);
 
-        // ---- header: name | gear ----
+        // ---- header: name | mute | gear (both small square icon buttons) ----
         // device mapping is implicit by name (Game → "SONO - Game"), so no chip/picker here
-        var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = HeaderH, BackColor = Color.Transparent, ColumnCount = 2, RowCount = 1 };
+        var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = HeaderH, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 1 };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 36));
 
         _name = new Label
@@ -64,6 +64,22 @@ public class ChannelCard : Control
             TextAlign = ContentAlignment.MiddleLeft,
         };
         header.Controls.Add(_name, 0, 0);
+
+        _mute = new Button
+        {
+            Text = "🔊",
+            Dock = DockStyle.Fill,
+            FlatStyle = FlatStyle.Flat,
+            ForeColor = Theme.Text,
+            BackColor = Color.Transparent,
+            Cursor = Cursors.Hand,
+            Margin = new Padding(0, 6, 4, 6),
+            Font = new Font("Segoe UI", 11f),
+        };
+        _mute.FlatAppearance.BorderSize = 0;
+        _mute.Click += (_, _) => { _def.Muted = !_def.Muted; UpdateMute(); MuteToggled?.Invoke(ChannelId); };
+        Tips.SetToolTip(_mute, "Mute / unmute channel");
+        header.Controls.Add(_mute, 1, 0);
 
         _gear = new Button
         {
@@ -79,41 +95,11 @@ public class ChannelCard : Control
         _gear.Click += (_, _) => ShowGearMenu();
         header.Controls.Add(_gear, 2, 0);
 
-        // ---- volume row: mute | slider | dB ----
-        var volRow = new TableLayoutPanel { Dock = DockStyle.Top, Height = VolRowH, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 1 };
-        volRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92));
-        volRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        volRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 62));
-
-        _mute = new Button
-        {
-            Dock = DockStyle.Fill,
-            FlatStyle = FlatStyle.Flat,
-            ForeColor = Theme.Text,
-            BackColor = Theme.Chip,
-            Cursor = Cursors.Hand,
-            TextAlign = ContentAlignment.MiddleCenter,
-            Font = new Font("Segoe UI", 10f),
-            Margin = new Padding(0, 0, 8, 0),
-        };
-        _mute.FlatAppearance.BorderSize = 0;
-        _mute.Click += (_, _) => { _def.Muted = !_def.Muted; UpdateMute(); MuteToggled?.Invoke(ChannelId); };
-        volRow.Controls.Add(_mute, 0, 0);
-
-        _slider = new SliderBar { Dock = DockStyle.Fill, Fill = accent, Margin = new Padding(4, 6, 4, 6) };
-        _slider.ValueChanged += v => { _def.Volume = v; UpdateDb(); VolumeLive?.Invoke(ChannelId, v); };
+        // ---- slim volume bar directly under the header ----
+        _slider = new SliderBar { Dock = DockStyle.Top, Height = VolRowH, Fill = accent, Margin = new Padding(0) };
+        _slider.ToolTip = "Channel volume (dB)";
+        _slider.ValueChanged += v => { _def.Volume = v; VolumeLive?.Invoke(ChannelId, v); };
         _slider.EditCommitted += _ => VolumeCommitted?.Invoke(ChannelId);
-        volRow.Controls.Add(_slider, 1, 0);
-
-        _db = new Label
-        {
-            Dock = DockStyle.Fill,
-            ForeColor = Theme.Muted,
-            BackColor = Color.Transparent,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Font = new Font("Segoe UI", 9.5f),
-        };
-        volRow.Controls.Add(_db, 2, 0);
 
         // ---- hotkeys (bottom) — 3rd column is an explicit clear button ----
         var hotkeys = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = HotkeyRowH * 3 + 6, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 3 };
@@ -177,7 +163,7 @@ public class ChannelCard : Control
         {
             Text = "APPS  (drag to route)",
             Dock = DockStyle.Top,
-            Height = CaptionH,
+            Height = 20,
             ForeColor = Theme.Muted,
             BackColor = Color.Transparent,
             TextAlign = ContentAlignment.MiddleLeft,
@@ -204,15 +190,14 @@ public class ChannelCard : Control
 
         // dock order: WinForms lays out docked children in REVERSE add order, so the
         // header must be added LAST to be processed FIRST (top strip). Result top→bottom:
-        // header (name/device/gear) → mute+volume → apps (fill) → hotkeys.
+        // header (name/mute/gear) → slim volume bar → apps (fill) → hotkeys.
         Controls.Add(appsWrap);
-        Controls.Add(volRow);
+        Controls.Add(_slider);
         Controls.Add(hotkeys);
         Controls.Add(header);
 
         _slider.SetValueExternal(def.Volume);
         UpdateMute();
-        UpdateDb();
     }
 
     private static Color ColorOf(ChannelDefinition def) => ColorTranslator.FromHtml(def.ColorHex);
@@ -222,7 +207,6 @@ public class ChannelCard : Control
     {
         _slider.SetValueExternal(_def.Volume);
         UpdateMute();
-        UpdateDb();
         _name.Text = _def.Name;
         _slider.Fill = ColorOf(_def);
         Tips.SetToolTip(_gear, string.IsNullOrWhiteSpace(hotkeyError) ? "Channel settings" : "⚠ " + hotkeyError);
@@ -276,12 +260,10 @@ public class ChannelCard : Control
 
     private void UpdateMute()
     {
-        _mute.Text = _def.Muted ? "🔇 Muted" : "🔊 On";
+        _mute.Text = _def.Muted ? "🔇" : "🔊";
         _mute.ForeColor = _def.Muted ? Theme.Danger : Theme.Text;
+        Tips.SetToolTip(_mute, _def.Muted ? "Unmute channel" : "Mute channel");
     }
-
-    private void UpdateDb()
-        => _db.Text = _def.Volume <= 0.0005f ? "−∞ dB" : $"{20 * Math.Log10(_def.Volume),+0:0.0} dB";
 
     protected override void OnResize(EventArgs e)
     {
