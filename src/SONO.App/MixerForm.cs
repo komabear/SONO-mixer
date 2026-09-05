@@ -10,7 +10,8 @@ public class MixerForm : Form
     private readonly AudioEngine _engine;
     private readonly HotkeyManager _hotkeys;
     private readonly AppSettings _settings;
-    private readonly AppRoutingEngine _appRouting = new();
+    private readonly RoutingEngine _routing = new();          // per-cable capture: exclusive control
+    private readonly RoutingHealthMonitor _health = new();
     private readonly NotifyIcon _tray;
     private readonly System.Windows.Forms.Timer _reconcileDebounce;
     private readonly Dictionary<string, ChannelCard> _cards = new();
@@ -216,6 +217,18 @@ public class MixerForm : Form
             Size = new Size(288, 34),
             Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
         };
+        _status.Click += (_, _) =>
+        {
+            if (_misroutes.Count > 0)
+            {
+                var lines = _misroutes.Take(6).Select(m => $"• {m.Exe} → should play on \"SONO - {m.ChannelName}\" (now on {m.ActualDevice})");
+                MessageBox.Show(this,
+                    "These apps are not playing into their channel's virtual device, so their channel slider cannot control them:\n\n"
+                    + string.Join("\n", lines)
+                    + "\n\nFix: open Windows sound settings (Volume mixer) and set each app's Output to its channel's \"SONO - …\" device. This is a one-time Windows setting per app — SONO cannot change it for you (Windows provides no API), but SONO will keep watch and tell you when something drifts.",
+                    "Mis-routed apps", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        };
 
         right.Controls.Add(rightHead);
         right.Controls.Add(rightSub);
@@ -273,22 +286,17 @@ public class MixerForm : Form
             BuildCards();
             ReflowGrid();
             IReadOnlyList<ChannelDefinition> Snapshot() { lock (_settings) return _settings.Channels.ToList(); }
-            _engine.SetChannelSource(null);   // enumeration only — capture engine owns volumes now
+            _engine.SetChannelSource(Snapshot);   // session-ownership keeps unclaimed apps at unity
             _engine.Start(600);
-            _appRouting.SetChannelSource(Snapshot);
-            _appRouting.Start();
+            _routing.SetChannelSource(Snapshot);
             RebindHotkeys();
             // sanitize: real output must never be one of the channel cables (feedback loop)
             if (_settings.RealOutputId is string ro && _settings.Channels.Any(c => c.DeviceId == ro))
             { _settings.RealOutputId = null; Save(); }
             ResolveDeviceMappings();
             UpdateOutputButtonLabel();
-            _appRouting.Rebuild(_settings.RealOutputId);
-            if (_appRouting.OutputDeviceName is not null && _settings.RealOutputId is null)
-            {
-                // adopt the engine's chosen output id for persistence
-                _settings.RealOutputId = null;
-            }
+            _routing.Rebuild(_settings.RealOutputId);
+            RefreshRoutingVolumes();
             if (_launchedAtBoot && _settings.StartMinimized) HideToTray(showBalloon: true);
         };
 
@@ -540,9 +548,28 @@ public class MixerForm : Form
 
     private EngineSnapshot? _last;
 
+    private List<RoutingHealthMonitor.MisRoute> _misroutes = new();
+    private int _healthCooldown;
+
     private void OnTick(EngineSnapshot snap)
     {
         _last = snap;
+        // health scan every ~5s (6 ticks × 600ms), off the hot path
+        if (++_healthCooldown >= 6)
+        {
+            _healthCooldown = 0;
+            Task.Run(() =>
+            {
+                var found = _health.Scan(SnapshotChannels());
+                BeginInvoke(() =>
+                {
+                    var before = _misroutes.Count;
+                    _misroutes = found;
+                    if (_misroutes.Count != before && _status is not null)
+                        _status.Text = $"▶ {snap.OutputDevice}{RoutingSuffix()}";
+                });
+            });
+        }
         UpdateCards(snap);
         RefreshRows(snap);
         RememberKnownApps(snap);
@@ -553,11 +580,16 @@ public class MixerForm : Form
                 : $"▶ {snap.OutputDevice}{RoutingSuffix()}";
     }
 
-    private string RoutingSuffix() => _appRouting.Error is not null
-        ? $"  |  ⚠ routing: {_appRouting.Error}"
-        : _appRouting.ActiveStreams > 0
-            ? $"  |  routing {_appRouting.ActiveStreams} app(s)"
-            : "";
+    private IReadOnlyList<ChannelDefinition> SnapshotChannels()
+    { lock (_settings) return _settings.Channels.ToList(); }
+
+    private string RoutingSuffix() => _routing.Error is not null
+        ? $"  |  ⚠ routing: {_routing.Error}"
+        : _misroutes.Count > 0
+            ? $"  |  ⚠ {_misroutes.Count} app(s) mis-routed — click here to fix"
+            : _routing.ActiveStreams > 0
+                ? $"  |  routing {_routing.ActiveStreams} ch"
+                : "";
 
     private void UpdateCards(EngineSnapshot snap)
     {
@@ -630,8 +662,8 @@ public class MixerForm : Form
             {
                 _settings.RealOutputId = captured;
                 Save();
-                _appRouting.Rebuild(_settings.RealOutputId);
-                UpdateOutputButtonLabel(_appRouting.OutputDeviceName is not null ? captured : null);
+                _routing.Rebuild(_settings.RealOutputId);
+                UpdateOutputButtonLabel(captured);
             };
             _outputMenu.Items.Add(item);
         }
@@ -653,7 +685,7 @@ public class MixerForm : Form
 
     private void RefreshRoutingVolumes()
     {
-        lock (_settings) _appRouting.ApplyVolumes(_settings.Channels.ToList());
+        lock (_settings) _routing.ApplyVolumes(_settings.Channels.ToList());
     }
 
     /// <summary>Channels bind to devices BY NAME: "Game" → endpoint starting with "SONO - Game".
@@ -767,7 +799,7 @@ public class MixerForm : Form
         _tray.Visible = false;
         _tray.Dispose();
         _reconcileDebounce.Dispose();
-        if (!SuppressCleanup) _appRouting.Dispose();   // theme swap keeps routing alive
+        if (!SuppressCleanup) _routing.Dispose();   // theme swap keeps routing alive
         base.OnFormClosed(e);
     }
 }
