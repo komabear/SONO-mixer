@@ -203,7 +203,7 @@ public class MixerForm : Form
                 bool compact = Height <= Screen.PrimaryScreen!.Bounds.Height / 2;
                 foreach (var c in _cards.Values) c.SetCompact(compact);
                 int mascotH = compact ? 34 : 130;
-                int maxBottom = right.Height - 36 - mascotH - 4;
+                int maxBottom = right.Height - 10 - mascotH - 4;   // grid margin + mascot + gap
                 if (_appList.Bottom > maxBottom) _appList.Height = maxBottom - _appList.Top;
             }
             right.Resize += (_, _) => ClampList();
@@ -227,8 +227,7 @@ public class MixerForm : Form
         right.Controls.Add(_status);
 
         // theme mascot: owner-drawn in the reserved strip between the app list and the status
-        // line → real alpha, bottom-center. At compact size (window ≤ half screen height)
-        // she scales to ¼ so the app list keeps most of the space.
+        // line → real alpha, bottom-center. Bottom margin matches the card grid (10px).
         if (_mascot is not null)
         {
             right.Paint += (_, e) =>
@@ -238,7 +237,7 @@ public class MixerForm : Form
                 int w = compact ? 34 : 130;
                 int h = (int)(w * (float)_mascot.Height / _mascot.Width);
                 int x = (right.Width - w) / 2;
-                int y = right.Height - 34 - h - 2;
+                int y = right.Height - h - 10;   // same bottom margin as the channel cards
                 e.Graphics.DrawImage(_mascot, x, y, w, h);
             };
             right.Resize += (_, _) => right.Invalidate();
