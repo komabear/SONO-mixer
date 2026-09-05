@@ -68,6 +68,32 @@ if (args.Length == 3 && args[0] == "meter")
     return;
 }
 
+if (args.Length == 1 && args[0] == "sess")
+{
+    Console.WriteLine("== sessions per render device ==");
+    foreach (var d in en.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
+    {
+        try
+        {
+            var sessCol = d.AudioSessionManager.Sessions;
+            if (sessCol.Count == 0) continue;
+            Console.WriteLine($"-- {d.FriendlyName}");
+            for (int i = 0; i < sessCol.Count; i++)
+            {
+                var s = sessCol[i];
+                uint pid = 0;
+                try { pid = s.GetProcessID; } catch { }
+                string name = "?";
+                try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { }
+                if (pid == 0) name = "system";
+                Console.WriteLine($"     {name,-22} vol={s.SimpleAudioVolume.Volume:0.00} mute={s.SimpleAudioVolume.Mute}");
+            }
+        }
+        catch { }
+    }
+    return;
+}
+
 Console.WriteLine("== RENDER endpoints ==");
 foreach (var d in en.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
     Console.WriteLine($"  {d.FriendlyName,-45} [{d.ID}]");

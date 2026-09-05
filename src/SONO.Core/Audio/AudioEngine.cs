@@ -61,7 +61,14 @@ public sealed class AudioEngine : IDisposable
 
             try
             {
-                _render ??= _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
+                // re-resolve the default device when it changes (audiosesrv switches can
+                // invalidate the cached MMDevice, making the session view go stale)
+                var currentDefault = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
+                if (_render is null || _render.ID != currentDefault.ID)
+                {
+                    _render?.Dispose();
+                    _render = currentDefault;
+                }
                 outputName = _render.FriendlyName;
 
                 // exe → owning channel (first channel wins if the same exe was added twice)
