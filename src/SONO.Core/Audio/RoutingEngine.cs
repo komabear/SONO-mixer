@@ -56,10 +56,12 @@ public sealed class RoutingEngine : IDisposable
 
                 var en = new MMDeviceEnumerator();
 
-                // real output: explicit choice → current default → whatever works
+                // real output: explicit choice → current default → best non-cable device
+                var mappedIds = mapped.Select(c => c.DeviceId).ToHashSet();
                 var outDevice = TryDevice(en, preferredRealOutputId)
                                 ?? TryDevice(en, en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console).ID)
-                                ?? en.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).FirstOrDefault();
+                                ?? en.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
+                                      .FirstOrDefault(d => !mappedIds.Contains(d.ID));
                 if (outDevice is null) { Error = "no output device available"; return; }
                 _outputDevice = outDevice;
                 RealOutputId = outDevice.ID;

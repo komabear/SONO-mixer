@@ -8,7 +8,7 @@ namespace SONO.Core.Audio;
 /// </summary>
 public static class PolicyConfigApi
 {
-    [ComImport, Guid("F8679F50-850A-41CF-9C72-430F290290C8")]
+    [ComImport, Guid("870af99c-171d-4f9e-af0d-e63df40c2bc9")]
     private class PolicyConfigClient { }
 
     [Guid("f8679f50-850a-41cf-9c72-430f290290c8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
