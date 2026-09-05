@@ -248,7 +248,6 @@ public class MixerForm : Form
             ReflowGrid();
             IReadOnlyList<ChannelDefinition> Snapshot() { lock (_settings) return _settings.Channels.ToList(); }
             _engine.SetChannelSource(Snapshot);
-            _engine.Tick += snap => BeginInvoke(() => OnTick(snap));
             _engine.Start(600);
             _routing.SetChannelSource(Snapshot);
             RebindHotkeys();
@@ -696,7 +695,14 @@ public class MixerForm : Form
         Close();
     }
 
-    private void EngineTickHandler(EngineSnapshot snap) => BeginInvoke(() => OnTick(snap));
+    private void EngineTickHandler(EngineSnapshot snap)
+    {
+        // ticks arrive on a timer thread; if the handle is gone (mid theme-swap) just drop the frame
+        if (!IsHandleCreated || IsDisposed) return;
+        try { BeginInvoke(() => OnTick(snap)); }
+        catch (ObjectDisposedException) { }
+        catch (InvalidOperationException) { }
+    }
 
     protected override void OnLoad(EventArgs e)
     {

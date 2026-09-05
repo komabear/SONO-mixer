@@ -47,7 +47,8 @@ public sealed class AudioEngine : IDisposable
         EngineSnapshot snap;
         try { snap = Reconcile(_channelSource?.Invoke() ?? Array.Empty<ChannelDefinition>()); }
         catch (Exception ex) { snap = new EngineSnapshot(Array.Empty<SessionView>(), "?", ex.Message); }
-        Tick?.Invoke(snap);
+        try { Tick?.Invoke(snap); }
+        catch (Exception ex) { SONO.Core.Diagnostics.Log.Write($"tick handler failed: {ex}"); } // a UI bug must never kill audio
     }
 
     private EngineSnapshot Reconcile(IReadOnlyList<ChannelDefinition> channels)
