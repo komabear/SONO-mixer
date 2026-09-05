@@ -195,13 +195,15 @@ public class MixerForm : Form
         };
         // keep the reserved mascot strip visible at ANY window height: clamp the list bottom
         // on every layout pass (anchors would otherwise stretch it over the strip).
-        // At small sizes the mascot hides entirely and the strip is released.
+        // Compact mode (window ≤ half screen height): mascot at ¼ size, strip shrinks.
         if (_mascot is not null)
         {
             void ClampList()
             {
-                if (right.Height < 430) { return; }   // compact: list stretches, mascot hidden
-                int maxBottom = right.Height - 36 - 130 - 4;   // status line + mascot strip
+                bool compact = Height <= Screen.PrimaryScreen!.Bounds.Height / 2;
+                foreach (var c in _cards.Values) c.SetCompact(compact);
+                int mascotH = compact ? 34 : 130;
+                int maxBottom = right.Height - 36 - mascotH - 4;
                 if (_appList.Bottom > maxBottom) _appList.Height = maxBottom - _appList.Top;
             }
             right.Resize += (_, _) => ClampList();
@@ -225,16 +227,18 @@ public class MixerForm : Form
         right.Controls.Add(_status);
 
         // theme mascot: owner-drawn in the reserved strip between the app list and the status
-        // line → behind children is impossible there (no children), real alpha, bottom-center.
-        // Hidden when the panel is too short (compact mode).
+        // line → real alpha, bottom-center. At compact size (window ≤ half screen height)
+        // she scales to ¼ so the app list keeps most of the space.
         if (_mascot is not null)
         {
             right.Paint += (_, e) =>
             {
-                if (_mascot is null || right.Height < 430) return;
-                int w = 130, h = (int)(130f * _mascot.Height / _mascot.Width);
+                if (_mascot is null) return;
+                bool compact = right.Height < 430;
+                int w = compact ? 34 : 130;
+                int h = (int)(w * (float)_mascot.Height / _mascot.Width);
                 int x = (right.Width - w) / 2;
-                int y = right.Height - 34 - h - 2;   // above the status line
+                int y = right.Height - 34 - h - 2;
                 e.Graphics.DrawImage(_mascot, x, y, w, h);
             };
             right.Resize += (_, _) => right.Invalidate();

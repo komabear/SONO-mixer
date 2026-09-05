@@ -218,7 +218,6 @@ public class ChannelCard : Control
         Controls.Add(volWrap);
         Controls.Add(hotkeysWrap);
         Controls.Add(header);
-        Resize += (_, _) => CompactForSize();
 
         _slider.SetValueExternal(def.Volume);
         UpdateMute();
@@ -226,12 +225,23 @@ public class ChannelCard : Control
 
     private static Color ColorOf(ChannelDefinition def) => ColorTranslator.FromHtml(def.ColorHex);
 
-    /// <summary>At small card sizes the shortcut block (and mascot in MixerForm) hide to save space.</summary>
-    private void CompactForSize()
+    private bool _compact;
+
+    /// <summary>Compact mode (window ≤ half screen height): hide the shortcut block entirely.</summary>
+    public void SetCompact(bool compact)
     {
-        bool compact = Height < 480;
+        if (_compact == compact) return;
+        _compact = compact;
         foreach (var f in _hotkeyFields.Values) f.Visible = !compact;
         foreach (var b in _hotkeyBoxes.Values) b.Visible = !compact;
+        hotkeysWrapVisible();
+    }
+
+    private void hotkeysWrapVisible()
+    {
+        // the wrapper itself collapses so the apps area reclaims the space
+        Controls.OfType<Panel>().FirstOrDefault(p => p.Dock == DockStyle.Bottom && p.Padding == new Padding(0, 10, 0, 12))!
+            .Height = _compact ? 0 : HotkeyRowH * 3 + 22;
     }
 
     /// <summary>Periodic refresh from the engine snapshot.</summary>
