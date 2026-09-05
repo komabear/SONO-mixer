@@ -17,7 +17,7 @@ public class MixerForm : Form
     private readonly Dictionary<string, Panel> _appRows = new(StringComparer.OrdinalIgnoreCase);
     private readonly ToolStripMenuItem _miAutostart, _miMinimized;
     private readonly Label _status;
-    private readonly FlowLayoutPanel _flow;
+    private readonly TableLayoutPanel _table;
     private readonly FlowLayoutPanel _appList;
     private bool _allowClose;
     private bool _balloonShown;
@@ -42,17 +42,21 @@ public class MixerForm : Form
         Icon = MakeIcon();
 
         // ---- left: channel tracks ----
-        _flow = new BufferedFlow
+        // ---- left: channel tracks (responsive 4-column grid) ----
+        _table = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             BackColor = Theme.Bg,
             Padding = new Padding(10),
-            AutoScroll = true,
+            ColumnCount = 4,
+            RowCount = 1,
             AllowDrop = true,
         };
-        _flow.DragOver += (_, e) => { if (e.Data?.GetDataPresent("SONO_CARD") == true) e.Effect = DragDropEffects.Move; };
-        _flow.DragDrop += FlowCardDrop;
-        Controls.Add(_flow);
+        for (int i = 0; i < 4; i++) _table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        _table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _table.DragOver += (_, e) => { if (e.Data?.GetDataPresent("SONO_CARD") == true) e.Effect = DragDropEffects.Move; };
+        _table.DragDrop += FlowCardDrop;
+        Controls.Add(_table);
 
         // ---- right: live applications ----
         var right = new Panel { Dock = DockStyle.Right, Width = 312, BackColor = Theme.Card };
@@ -140,20 +144,6 @@ public class MixerForm : Form
         Controls.Add(right);
         right.BringToFront();
 
-        var newBtn = new Button
-        {
-            Text = "+ New channel",
-            FlatStyle = FlatStyle.Flat,
-            ForeColor = Theme.Text,
-            BackColor = Theme.Card,
-            Size = new Size(248, 34),
-            Margin = new Padding(8),
-            Cursor = Cursors.Hand,
-        };
-        newBtn.FlatAppearance.BorderColor = Theme.Border;
-        newBtn.Click += (_, _) => AddChannel();
-        _flow.Controls.Add(newBtn);
-
         // ---- tray ----
         _tray = new NotifyIcon
         {
@@ -187,6 +177,9 @@ public class MixerForm : Form
             _engine.Start(600);
             _routing.SetChannelSource(Snapshot);
             RebindHotkeys();
+            // sanitize: real output must never be one of the channel cables (feedback loop)
+            if (_settings.RealOutputId is string ro && _settings.Channels.Any(c => c.DeviceId == ro))
+            { _settings.RealOutputId = null; Save(); }
             SetupDefaultMappingIfNeeded();
             _routing.Rebuild(_settings.RealOutputId);
             if (_routing.RealOutputId != _settings.RealOutputId)
@@ -263,7 +256,7 @@ public class MixerForm : Form
 
     private void CreateCard(ChannelDefinition def)
     {
-        var card = new ChannelCard(def) { Size = new Size(248, 430), Margin = new Padding(8) };
+        var card = new ChannelCard(def) { Dock = DockStyle.Fill, Margin = new Padding(8) };
         card.VolumeLive += (_, _) => { RefreshRoutingVolumes(); _reconcileDebounce.Start(); };
         card.VolumeCommitted += _ => { Save(); _engine.ReconcileNow(); };
         card.MuteToggled += _ => { Save(); _engine.ReconcileNow(); RefreshRoutingVolumes(); };
@@ -271,8 +264,6 @@ public class MixerForm : Form
         card.ExeRemoved += exe => { RemoveExeEverywhere(exe); Save(); _engine.ReconcileNow(); RefreshRows(_last!); };
         card.HotkeySet += (_, _, _) => { RebindHotkeys(); Save(); };
         card.DefinitionEdited += _ => Save();
-        card.HeaderDrag += () => card.DoDragDrop(new DataObject("SONO_CARD", card.ChannelId), DragDropEffects.Move);
-        card.RemoveRequested += id => RemoveChannel(id);
         card.AddAppRequested += id => ShowAddAppDialog(id);
         card.DevicePickRequested += id => ShowDevicePicker(id);
         card.MakeDefaultRequested += id =>
@@ -283,36 +274,7 @@ public class MixerForm : Form
                 catch (Exception ex) { MessageBox.Show(this, $"Could not set default device: {ex.Message}", "SONO"); }
         };
         _cards[def.Id] = card;
-        _flow.Controls.Add(card);
-        _flow.Controls.SetChildIndex(card, _flow.Controls.Count - 2); // before the "+ New channel" button
-        card.BringToFront();
-    }
-
-    private void RemoveChannel(string id)
-    {
-        if (MessageBox.Show(this, "Remove this channel? Assigned apps become independent again.",
-                "Remove channel", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
-        lock (_settings)
-        {
-            var def = _settings.Channels.FirstOrDefault(c => c.Id == id);
-            if (def is not null) _settings.Channels.Remove(def);
-        }
-        if (_cards.Remove(id, out var card)) { _flow.Controls.Remove(card); card.Dispose(); }
-        RebindHotkeys();
-        Save();
-        _engine.ReconcileNow();
-    }
-
-    private void AddChannel()
-    {
-        var def = new ChannelDefinition
-        {
-            Name = $"Channel {_settings.Channels.Count(c => c.Kind == ChannelKind.Group) + 1}",
-            ColorHex = Theme.Palette[_settings.Channels.Count % Theme.Palette.Length],
-        };
-        lock (_settings) _settings.Channels.Add(def);
-        CreateCard(def);
-        Save();
+        _table.Controls.Add(card);
     }
 
     private void AssignExe(string exe, string channelId)
@@ -374,20 +336,8 @@ public class MixerForm : Form
             AssignExe(chosen, channelId);
     }
 
-    private void FlowCardDrop(object? sender, DragEventArgs e)
-    {
-        if (e.Data?.GetData("SONO_CARD") is not string) return;
-        var dragged = DraggedCard;
-        DraggedCard = null;
-        if (dragged is null || dragged.IsDisposed) return;
-        var p = _flow.PointToClient(new Point(e.X, e.Y));
-        var others = _flow.Controls.OfType<ChannelCard>().Where(c => c != dragged).OrderBy(c => c.Left).ToList();
-        int idx = others.Count(c => c.Right < p.X);   // cards entirely left of the cursor
-        _flow.Controls.SetChildIndex(dragged, Math.Clamp(idx, 0, others.Count));
-    }
-
-    private ChannelCard? DraggedCard;
-
+    // channels are fixed 4-up columns, so a card "drop" is a no-op now
+    private void FlowCardDrop(object? sender, DragEventArgs e) { }
     // ---------- right panel rows ----------
 
     private void RefreshRows(EngineSnapshot snap)

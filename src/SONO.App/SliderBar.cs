@@ -6,7 +6,7 @@ namespace SONO.App;
 /// <summary>Flat horizontal volume slider, custom-painted (no WinForms TrackBar chrome).</summary>
 public class SliderBar : Control
 {
-    private const int PadX = 10, TrackH = 6, ThumbR = 7;
+    private const int PadX = 10, TrackH = 8, ThumbR = 9;
     private float _val = 1f;
     private bool _hover, _drag;
     private Color _fill = Theme.Accent;

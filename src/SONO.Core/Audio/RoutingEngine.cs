@@ -58,7 +58,7 @@ public sealed class RoutingEngine : IDisposable
 
                 // real output: explicit choice → current default → best non-cable device
                 var mappedIds = mapped.Select(c => c.DeviceId).ToHashSet();
-                var outDevice = TryDevice(en, preferredRealOutputId)
+                var outDevice = TryDevice(en, preferredRealOutputId is string p && !mappedIds.Contains(p) ? p : null)
                                 ?? TryDevice(en, en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console).ID)
                                 ?? en.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
                                       .FirstOrDefault(d => !mappedIds.Contains(d.ID));

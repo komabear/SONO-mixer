@@ -3,7 +3,7 @@ using SONO.Core.Audio;
 
 namespace SONO.App;
 
-/// <summary>One channel track: header, volume slider, mute, app drop-area, hotkey binds.</summary>
+/// <summary>One channel track: header (name / device / gear), volume row, app drop-area, hotkey binds. Fully dock-based — fills whatever space it gets.</summary>
 public class ChannelCard : Control
 {
     private static readonly HotkeySlot[] Slots = { HotkeySlot.VolDown, HotkeySlot.VolUp, HotkeySlot.Mute };
@@ -15,20 +15,19 @@ public class ChannelCard : Control
     };
     private static readonly ToolTip Tips = new();
 
+    private const int HeaderH = 46, VolRowH = 52, HotkeyRowH = 30, CaptionH = 20;
+
     private readonly ChannelDefinition _def;
     private readonly FlowLayoutPanel _apps;
     private readonly Label _name;
     private readonly Label _db;
+    private readonly Label _deviceChip;
     private readonly Button _mute;
     private readonly Button _gear;
     private readonly SliderBar _slider;
     private readonly Dictionary<HotkeySlot, HotkeyCaptureBox> _hotkeyBoxes = new();
-    private readonly Label _deviceChip;
 
     public string ChannelId => _def.Id;
-
-    public event Action<string>? DevicePickRequested;
-    public event Action<string>? MakeDefaultRequested;
 
     public event Action<string, float>? VolumeLive;
     public event Action<string>? VolumeCommitted;
@@ -37,9 +36,9 @@ public class ChannelCard : Control
     public event Action<string>? ExeRemoved;
     public event Action<string, HotkeySlot, string?>? HotkeySet;
     public event Action<string>? DefinitionEdited;
-    public event Action<string>? RemoveRequested;
     public event Action<string>? AddAppRequested;
-    public event Action? HeaderDrag;
+    public event Action<string>? DevicePickRequested;
+    public event Action<string>? MakeDefaultRequested;
 
     public ChannelCard(ChannelDefinition def)
     {
@@ -47,90 +46,147 @@ public class ChannelCard : Control
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
                  | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
         BackColor = Theme.Card;
-        Padding = new Padding(10);
-
+        Padding = new Padding(12);
         var accent = ColorOf(def);
+
+        // ---- header: name | device chip | gear ----
+        var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = HeaderH, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 1 };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 36));
 
         _name = new Label
         {
             Text = def.Name,
             AutoEllipsis = true,
-            Font = new Font("Segoe UI", 11f, FontStyle.Bold),
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI", 13f, FontStyle.Bold),
             ForeColor = Theme.Text,
             BackColor = Color.Transparent,
-            Location = new Point(28, 12),
-            Size = new Size(170, 22),
+            TextAlign = ContentAlignment.MiddleLeft,
         };
-        _name.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) HeaderDrag?.Invoke(); };
-        Controls.Add(_name);
+        header.Controls.Add(_name, 0, 0);
 
         _deviceChip = new Label
         {
-            Text = "no device",
+            Text = def.DeviceId is null ? "no device" : "device",
             AutoSize = true,
+            Anchor = AnchorStyles.Right,
             ForeColor = Theme.Muted,
             BackColor = Theme.Chip,
-            Padding = new Padding(5, 3, 5, 3),
-            Location = new Point(Width - 190, 12),
+            Padding = new Padding(6, 4, 6, 4),
             Cursor = Cursors.Hand,
+            TextAlign = ContentAlignment.MiddleRight,
+            Margin = new Padding(0, 0, 8, 0),
         };
         _deviceChip.Click += (_, _) => DevicePickRequested?.Invoke(ChannelId);
-        Controls.Add(_deviceChip);
+        header.Controls.Add(_deviceChip, 1, 0);
 
         _gear = new Button
         {
             Text = "⚙",
+            Dock = DockStyle.Fill,
             FlatStyle = FlatStyle.Flat,
             ForeColor = Theme.Muted,
             BackColor = Color.Transparent,
-            Size = new Size(26, 24),
-            Location = new Point(210, 9),
             Cursor = Cursors.Hand,
+            Margin = new Padding(0),
         };
         _gear.FlatAppearance.BorderSize = 0;
         _gear.Click += (_, _) => ShowGearMenu();
-        Controls.Add(_gear);
+        header.Controls.Add(_gear, 2, 0);
 
-        _slider = new SliderBar { Fill = accent, Location = new Point(14, 44), Size = new Size(220, 30), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
-        _slider.ValueChanged += v => { _def.Volume = v; UpdateDb(); VolumeLive?.Invoke(ChannelId, v); };
-        _slider.EditCommitted += _ => VolumeCommitted?.Invoke(ChannelId);
-        Controls.Add(_slider);
+        // ---- volume row: mute | slider | dB ----
+        var volRow = new TableLayoutPanel { Dock = DockStyle.Top, Height = VolRowH, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 1 };
+        volRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
+        volRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        volRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
 
         _mute = new Button
         {
+            Dock = DockStyle.Fill,
             FlatStyle = FlatStyle.Flat,
             ForeColor = Theme.Text,
             BackColor = Theme.Chip,
-            Size = new Size(84, 24),
-            Location = new Point(14, 80),
             Cursor = Cursors.Hand,
             TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI", 10f),
+            Margin = new Padding(0, 0, 8, 0),
         };
         _mute.FlatAppearance.BorderSize = 0;
         _mute.Click += (_, _) => { _def.Muted = !_def.Muted; UpdateMute(); MuteToggled?.Invoke(ChannelId); };
-        Controls.Add(_mute);
+        volRow.Controls.Add(_mute, 0, 0);
+
+        _slider = new SliderBar { Dock = DockStyle.Fill, Fill = accent, Margin = new Padding(4, 6, 4, 6) };
+        _slider.ValueChanged += v => { _def.Volume = v; UpdateDb(); VolumeLive?.Invoke(ChannelId, v); };
+        _slider.EditCommitted += _ => VolumeCommitted?.Invoke(ChannelId);
+        volRow.Controls.Add(_slider, 1, 0);
 
         _db = new Label
         {
-            Text = "",
+            Dock = DockStyle.Fill,
             ForeColor = Theme.Muted,
             BackColor = Color.Transparent,
-            Location = new Point(104, 84),
-            Size = new Size(110, 18),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Font = new Font("Segoe UI", 9.5f),
         };
-        Controls.Add(_db);
+        volRow.Controls.Add(_db, 2, 0);
 
+        // ---- hotkeys (bottom) ----
+        var hotkeys = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = HotkeyRowH * 3 + 6, BackColor = Color.Transparent, ColumnCount = 2, RowCount = 3 };
+        hotkeys.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
+        hotkeys.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        int y = 0;
+        foreach (var slot in Slots)
+        {
+            hotkeys.RowStyles.Add(new RowStyle(SizeType.Absolute, HotkeyRowH));
+            var lbl = new Label
+            {
+                Text = SlotNames[slot],
+                Dock = DockStyle.Fill,
+                ForeColor = Theme.Muted,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = new Font("Segoe UI", 10f),
+            };
+            var box = new HotkeyCaptureBox
+            {
+                Dock = DockStyle.Fill,
+                Anchor = AnchorStyles.Left | AnchorStyles.Right,
+                Tag = def.GetHotkey(slot),
+                Text = def.GetHotkey(slot) ?? "(none)",
+                Font = new Font("Segoe UI", 10.5f),
+                Margin = new Padding(0, 2, 0, 2),
+            };
+            var slotCaptured = slot;
+            box.Committed += text => { _def.SetHotkey(slotCaptured, text); HotkeySet?.Invoke(ChannelId, slotCaptured, text); };
+            hotkeys.Controls.Add(lbl, 0, y);
+            hotkeys.Controls.Add(box, 1, y);
+            _hotkeyBoxes[slot] = box;
+            y++;
+        }
+
+        // ---- apps area (fill): caption + flow ----
+        var appsWrap = new Panel { Dock = DockStyle.Fill, BackColor = Theme.CardInner, Padding = new Padding(1) };
+        appsWrap.Paint += (_, e) => e.Graphics.DrawRectangle(new Pen(Theme.Border), 0, 0, appsWrap.Width - 1, appsWrap.Height - 1);
+        var caption = new Label
+        {
+            Text = "APPS  (drag to route)",
+            Dock = DockStyle.Top,
+            Height = CaptionH,
+            ForeColor = Theme.Muted,
+            BackColor = Color.Transparent,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Font = new Font("Segoe UI", 7f, FontStyle.Bold),
+            Padding = new Padding(4, 2, 0, 0),
+        };
         _apps = new FlowLayoutPanel
         {
+            Dock = DockStyle.Fill,
             BackColor = Theme.CardInner,
-            Location = new Point(12, 122),
-            Size = new Size(224, 200),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
             Padding = new Padding(5),
             AllowDrop = true,
         };
-        _apps.Paint += (_, e) => e.Graphics.DrawRectangle(new Pen(Theme.Border), 0, 0, _apps.Width - 1, _apps.Height - 1);
         _apps.DragEnter += (_, e) =>
         {
             if (e.Data?.GetDataPresent(Chips.Format) == true) e.Effect = DragDropEffects.Move;
@@ -139,40 +195,28 @@ public class ChannelCard : Control
         {
             if (e.Data?.GetData(Chips.Format) is string exe) ExeDropped?.Invoke(exe, ChannelId);
         };
-        Controls.Add(_apps);
+        appsWrap.Controls.Add(_apps);
+        appsWrap.Controls.Add(caption);
 
-        int y = 0;
-        foreach (var slot in Slots)
-        {
-            var lbl = new Label
-            {
-                Text = SlotNames[slot],
-                ForeColor = Theme.Muted,
-                BackColor = Color.Transparent,
-                Location = new Point(14, y),
-                Size = new Size(46, 24),
-                TextAlign = ContentAlignment.MiddleLeft,
-            };
-            var box = new HotkeyCaptureBox
-            {
-                Location = new Point(64, y - 1),
-                Size = new Size(170, 24),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                Tag = def.GetHotkey(slot),
-                Text = def.GetHotkey(slot) ?? "(none)",
-                Font = new Font("Segoe UI", 9f),
-            };
-            var slotCaptured = slot;
-            box.Committed += text => { _def.SetHotkey(slotCaptured, text); HotkeySet?.Invoke(ChannelId, slotCaptured, text); };
-            Controls.Add(lbl);
-            Controls.Add(box);
-            _hotkeyBoxes[slot] = box;
-            y += 30;
-        }
+        // dock order: index 0 is laid out last → add Fill first, then Top/Bottom rows
+        Controls.Add(appsWrap);
+        Controls.Add(header);
+        Controls.Add(volRow);
+        Controls.Add(hotkeys);
 
         _slider.SetValueExternal(def.Volume);
         UpdateMute();
         UpdateDb();
+        UpdateDeviceChip();
+    }
+
+    private string? _deviceLabel;
+    public void SetDeviceLabel(string? label) { _deviceLabel = label; UpdateDeviceChip(); }
+
+    private void UpdateDeviceChip()
+    {
+        _deviceChip.Text = _def.DeviceId is null ? "no device" : _deviceLabel ?? "device ✓";
+        _deviceChip.ForeColor = _def.DeviceId is null ? Theme.Muted : Theme.Accent;
     }
 
     private static Color ColorOf(ChannelDefinition def) => ColorTranslator.FromHtml(def.ColorHex);
@@ -185,14 +229,10 @@ public class ChannelCard : Control
         UpdateDb();
         _name.Text = _def.Name;
         _slider.Fill = ColorOf(_def);
-        _deviceChip.Text = _def.DeviceId is null ? "no device" : _deviceLabel ?? "device ✓";
-        _deviceChip.ForeColor = _def.DeviceId is null ? Theme.Muted : Theme.Accent;
+        UpdateDeviceChip();
         Tips.SetToolTip(_gear, string.IsNullOrWhiteSpace(hotkeyError) ? "Channel settings" : "⚠ " + hotkeyError);
         DiffChips(owned);
     }
-
-    private string? _deviceLabel;
-    public void SetDeviceLabel(string? label) { _deviceLabel = label; }
 
     private void DiffChips(IReadOnlyList<SessionView> owned)
     {
@@ -232,6 +272,7 @@ public class ChannelCard : Control
                 Padding = new Padding(7, 5, 7, 5),
                 Margin = new Padding(3),
                 Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 10f),
             };
             add.Click += (_, _) => AddAppRequested?.Invoke(ChannelId);
             _apps.Controls.Add(add);
@@ -250,31 +291,17 @@ public class ChannelCard : Control
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
-        Region = new Region(SliderBar.RoundRect(0, 0, Width, Height, 10));
-        _name.Width = Width - 70;
-        _gear.Location = new Point(Width - 38, 9);
-        _deviceChip.Location = new Point(Width - _deviceChip.Width - 40, 12);
-        _db.Width = Width - 114;
-        _apps.Size = new Size(Width - 24, Height - 122 - 100);
-        int y = Height - 96;
-        foreach (var slot in Slots)
-        {
-            _hotkeyBoxes[slot].Location = new Point(64, y - 1);
-            _hotkeyBoxes[slot].Width = Width - 76;
-            y += 30;
-        }
+        Region = new Region(SliderBar.RoundRect(0, 0, Width, Height, 12));
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        using var bg = SliderBar.RoundRect(0, 0, Width - 1, Height - 1, 10);
+        using var bg = SliderBar.RoundRect(0, 0, Width - 1, Height - 1, 12);
         using (var b = new SolidBrush(Theme.Card)) g.FillPath(b, bg);
         using var strip = SliderBar.RoundRect(0, 0, 6, Height, 3);
         using (var b = new SolidBrush(ColorOf(_def))) g.FillPath(b, strip);
-
-        g.DrawString("APPS", new Font("Segoe UI", 6.5f, FontStyle.Bold), new SolidBrush(Theme.Muted), 14, 108);
     }
 
     private void ShowGearMenu()
@@ -300,8 +327,6 @@ public class ChannelCard : Control
         menu.Items.Add("Output device…", null, (_, _) => DevicePickRequested?.Invoke(ChannelId));
         if (_def.DeviceId is not null)
             menu.Items.Add("Set device as Windows default", null, (_, _) => MakeDefaultRequested?.Invoke(ChannelId));
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Remove channel…", null, (_, _) => RemoveRequested?.Invoke(ChannelId));
         menu.Show(_gear, new Point(0, _gear.Height));
     }
 }
