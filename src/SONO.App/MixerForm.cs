@@ -180,7 +180,7 @@ public class MixerForm : Form
             var mfull = Path.Combine(AppContext.BaseDirectory, mimg);
             if (File.Exists(mfull)) _mascot = Image.FromFile(mfull);
         }
-        int mascotInset = _mascot is null ? 0 : 158;
+        int mascotInset = 130;   // reserved bottom band in ALL themes (mascot paints empty when absent)
 
         _appList = new SmoothFlowPanel
         {
@@ -193,17 +193,16 @@ public class MixerForm : Form
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             Padding = new Padding(6),
         };
-        // keep the reserved mascot strip visible at ANY window height: clamp the list bottom
-        // on every layout pass (anchors would otherwise stretch it over the strip).
-        // Compact mode (window ≤ half screen height): mascot at ¼ size, strip shrinks.
-        if (_mascot is not null)
+        // keep the reserved bottom band visible at ANY window height: clamp the list bottom
+        // on every layout pass (anchors would otherwise stretch it over the band).
+        // Compact mode (window ≤ half screen height): mascot at ¼ size, band shrinks.
         {
             void ClampList()
             {
                 bool compact = Height <= Screen.PrimaryScreen!.Bounds.Height / 2;
                 foreach (var c in _cards.Values) c.SetCompact(compact);
                 int mascotH = compact ? 34 : 130;
-                int maxBottom = right.Height - 10 - mascotH - 4;   // grid margin + mascot + gap
+                int maxBottom = right.Height - 10 - mascotH - 4;   // grid margin + mascot band + gap
                 if (_appList.Bottom > maxBottom) _appList.Height = maxBottom - _appList.Top;
             }
             right.Resize += (_, _) => ClampList();

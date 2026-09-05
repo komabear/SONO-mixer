@@ -64,8 +64,24 @@ internal sealed class SonoContext : ApplicationContext
     private void ShowMain()
     {
         var form = new MixerForm(_engine, _hotkeys, _settings, _boot);
-        form.UiRestartRequested += form.ForceClose;
+        if (_hasBounds)
+        {
+            form.StartPosition = FormStartPosition.Manual;
+            form.Bounds = _bounds;
+            form.WindowState = _state;
+        }
+        form.UiRestartRequested += () =>
+        {
+            _bounds = form.Bounds;          // seamless swap: keep size/position/state
+            _state = form.WindowState;
+            _hasBounds = true;
+            form.ForceClose();
+        };
         form.FormClosed += (_, _) => { if (!form.SuppressCleanup) ExitThread(); else ShowMain(); };
         form.Show();
     }
+
+    private Rectangle _bounds;
+    private FormWindowState _state;
+    private bool _hasBounds;
 }

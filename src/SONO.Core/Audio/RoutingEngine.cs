@@ -33,6 +33,7 @@ public sealed class RoutingEngine : IDisposable
     private Func<IReadOnlyList<ChannelDefinition>>? _channelSource;
     private string? _realOutputId;
     private bool _running;
+    private string? _lastSig;
 
     public string? RealOutputId { get => Volatile.Read(ref _realOutputId); private set => _realOutputId = value; }
     public bool IsRunning => _running;
@@ -48,11 +49,15 @@ public sealed class RoutingEngine : IDisposable
         {
             try
             {
-                TeardownLocked();
-
                 var channels = _channelSource?.Invoke() ?? Array.Empty<ChannelDefinition>();
                 var mapped = channels.Where(c => c.DeviceId is not null).ToList();
-                if (mapped.Count == 0) { _running = false; Error = null; return; }
+
+                // no-op when the mapping is unchanged (e.g. UI theme swap) — avoids an audible hiccup
+                var sig = string.Join("|", mapped.Select(c => c.DeviceId)) + "#" + (preferredRealOutputId ?? "");
+                if (_running && sig == _lastSig) return;
+                _lastSig = sig;
+
+                TeardownLocked();
 
                 var en = new MMDeviceEnumerator();
 
@@ -156,6 +161,7 @@ public sealed class RoutingEngine : IDisposable
 
     private void TeardownLocked()
     {
+        _lastSig = null;
         foreach (var s in _streams.Values)
         {
             try { s.Capture.StopRecording(); } catch { }
