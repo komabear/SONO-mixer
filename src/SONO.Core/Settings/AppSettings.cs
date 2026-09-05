@@ -18,6 +18,9 @@ public sealed class AppSettings
 
     /// <summary>Real output device the mixed channels play through (endpoint id).</summary>
     public string? RealOutputId { get; set; }
+
+    /// <summary>Active UI theme id (see ThemeCatalog).</summary>
+    public string ThemeId { get; set; } = "tokyo-night";
     public List<ChannelDefinition> Channels { get; set; } = new();
 }
 

@@ -1,3 +1,6 @@
+using SONO.Core.Audio;
+using SONO.Core.Settings;
+
 namespace SONO.App;
 
 internal static class Program
@@ -19,23 +22,50 @@ internal static class Program
         using var mutex = new Mutex(true, @"Local\SONO.SingleInstance", out bool firstInstance);
         if (!firstInstance)
         {
-            // Someone else is running: signal its tray icon via a benign local message and exit.
             MessageBox.Show("SONO is already running. Look for its icon in the system tray.",
                 "SONO", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
-        var settings = SONO.Core.Settings.SettingsStore.Load();
-        var engine = new SONO.Core.Audio.AudioEngine();
+        var settings = SettingsStore.Load();
+        Theme.Apply(ThemeCatalog.Get(settings.ThemeId));
+        var engine = new AudioEngine();
         var hotkeys = new HotkeyManager();
 
         if (autostartRequested || settings.StartWithWindows)
         {
-            try { if (!SONO.Core.SystemIntegrations.Autostart.IsEnabled()) SONO.Core.SystemIntegrations.Autostart.Set(true); }
+            try { if (!Core.SystemIntegrations.Autostart.IsEnabled()) Core.SystemIntegrations.Autostart.Set(true); }
             catch { /* non-fatal */ }
         }
 
-        Application.Run(new MixerForm(engine, hotkeys, settings, autostartRequested));
+        // ApplicationContext lets us hot-swap the main form (theme changes) while the
+        // audio engine, routing and hotkeys keep running.
+        Application.Run(new SonoContext(engine, hotkeys, settings, autostartRequested));
         GC.KeepAlive(mutex);
+    }
+}
+
+internal sealed class SonoContext : ApplicationContext
+{
+    private readonly AudioEngine _engine;
+    private readonly HotkeyManager _hotkeys;
+    private readonly AppSettings _settings;
+    private readonly bool _boot;
+
+    public SonoContext(AudioEngine engine, HotkeyManager hotkeys, AppSettings settings, bool boot)
+    {
+        _engine = engine;
+        _hotkeys = hotkeys;
+        _settings = settings;
+        _boot = boot;
+        ShowMain();
+    }
+
+    private void ShowMain()
+    {
+        var form = new MixerForm(_engine, _hotkeys, _settings, _boot);
+        form.UiRestartRequested += form.ForceClose;
+        form.FormClosed += (_, _) => { if (!form.SuppressCleanup) ExitThread(); else ShowMain(); };
+        form.Show();
     }
 }

@@ -27,6 +27,12 @@ public class MixerForm : Form
     private string _hotkeyError = "";
     private readonly bool _launchedAtBoot;
 
+    /// <summary>Raised when the UI must be recreated (theme change). Engine/routing/hotkeys are kept alive.</summary>
+    public event Action? UiRestartRequested;
+
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool SuppressCleanup { get; set; }
+
     public MixerForm(AudioEngine engine, HotkeyManager hotkeys, AppSettings settings, bool launchedAtBoot)
     {
         _engine = engine;
@@ -118,7 +124,22 @@ public class MixerForm : Form
                 Save();
             }
         };
-        settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep });
+        var miTheme = new ToolStripMenuItem("Theme");
+        foreach (var t in ThemeCatalog.All)
+        {
+            var item = new ToolStripMenuItem(t.Name) { Checked = t.Id == _settings.ThemeId };
+            var captured = t;
+            item.Click += (_, _) =>
+            {
+                if (captured.Id == _settings.ThemeId) return;
+                _settings.ThemeId = captured.Id;
+                Save();
+                Theme.Apply(captured);
+                UiRestartRequested?.Invoke();
+            };
+            miTheme.DropDownItems.Add(item);
+        }
+        settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep, miTheme });
         settingsBtn.Click += (_, _) => settingsMenu.Show(settingsBtn, new Point(0, settingsBtn.Height));
 
         // ---- output picker: where the mixed channels come out ----
@@ -174,6 +195,26 @@ public class MixerForm : Form
         right.Controls.Add(_outputPick);
         right.Controls.Add(_appList);
         right.Controls.Add(_status);
+
+        // theme mascot (e.g. Miku), pinned to the bottom-right corner of the Applications panel
+        if (Theme.Current.ImagePath is string img)
+        {
+            var full = Path.Combine(AppContext.BaseDirectory, img);
+            if (File.Exists(full))
+            {
+                var mascot = new PictureBox
+                {
+                    Image = Image.FromFile(full),
+                    SizeMode = PictureBoxSizeMode.Zoom,
+                    Size = new Size(96, 96),
+                    Location = new Point(292 - 96, 604 - 96),
+                    Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                    BackColor = Color.Transparent,
+                };
+                right.Controls.Add(mascot);
+                mascot.BringToFront();
+            }
+        }
         Controls.Add(right);
         _table.BringToFront();   // Fill control must be laid out LAST so the Right panel reserves its strip
 
@@ -647,12 +688,30 @@ public class MixerForm : Form
         lock (_settings) SONO.Core.Settings.SettingsStore.Save(_settings);
     }
 
+    /// <summary>Close without the tray-hide intercept, keeping shared services alive (theme swap).</summary>
+    public void ForceClose()
+    {
+        _allowClose = true;
+        SuppressCleanup = true;
+        Close();
+    }
+
+    private void EngineTickHandler(EngineSnapshot snap) => BeginInvoke(() => OnTick(snap));
+
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+        _engine.Tick += EngineTickHandler;
+    }
+
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        _routing.Dispose();
+        _engine.Tick -= EngineTickHandler;
+        _hotkeys.Pressed -= OnHotkey;
         _tray.Visible = false;
         _tray.Dispose();
         _reconcileDebounce.Dispose();
+        if (!SuppressCleanup) _routing.Dispose();   // theme swap keeps routing alive
         base.OnFormClosed(e);
     }
 }
