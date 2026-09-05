@@ -51,6 +51,18 @@ if (args.Length == 2 && args[0] == "setdefault")
     return;
 }
 
+if (args.Length == 2 && args[0] == "tonedefault")
+{
+    var defDev = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
+    using var outStream = new WasapiOut(defDev, AudioClientShareMode.Shared, false, 60);
+    outStream.Init(new SampleToWaveProvider(new Sine48k()));
+    outStream.Play();
+    Console.WriteLine($"tone → (default) {defDev.FriendlyName}");
+    await Task.Delay(int.Parse(args[1]) * 1000);
+    Console.WriteLine("tone done");
+    return;
+}
+
 if (args.Length == 3 && args[0] == "tone")
 {
     var dev = en.GetDevice(args[1]);
