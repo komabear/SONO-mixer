@@ -50,9 +50,11 @@ public class ChannelCard : Control
         var accent = ColorOf(def);
 
         // ---- header: name | device chip | gear ----
+        // chip column is percentage-based (NOT AutoSize) so a long device name can never
+        // squeeze the channel name to zero width; both ellipsize gracefully.
         var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = HeaderH, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 1 };
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 36));
 
         _name = new Label
@@ -70,14 +72,14 @@ public class ChannelCard : Control
         _deviceChip = new Label
         {
             Text = def.DeviceId is null ? "no device" : "device",
-            AutoSize = true,
-            Anchor = AnchorStyles.Right,
+            Dock = DockStyle.Fill,
+            AutoEllipsis = true,
             ForeColor = Theme.Muted,
             BackColor = Theme.Chip,
             Padding = new Padding(6, 4, 6, 4),
             Cursor = Cursors.Hand,
             TextAlign = ContentAlignment.MiddleRight,
-            Margin = new Padding(0, 0, 8, 0),
+            Margin = new Padding(0, 8, 8, 8),
         };
         _deviceChip.Click += (_, _) => DevicePickRequested?.Invoke(ChannelId);
         header.Controls.Add(_deviceChip, 1, 0);
@@ -98,9 +100,9 @@ public class ChannelCard : Control
 
         // ---- volume row: mute | slider | dB ----
         var volRow = new TableLayoutPanel { Dock = DockStyle.Top, Height = VolRowH, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 1 };
-        volRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
+        volRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92));
         volRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        volRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
+        volRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 62));
 
         _mute = new Button
         {
