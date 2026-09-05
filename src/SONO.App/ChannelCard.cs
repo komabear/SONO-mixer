@@ -15,7 +15,7 @@ public class ChannelCard : Control
     };
     private static readonly ToolTip Tips = new();
 
-    private const int HeaderH = 42, VolRowH = 30, HotkeyRowH = 30;
+    private const int HeaderH = 42, VolRowH = 30, HotkeyRowH = 34;
 
     private readonly ChannelDefinition _def;
     private readonly FlowLayoutPanel _apps;
@@ -125,12 +125,14 @@ public class ChannelCard : Control
                 Font = new Font("Segoe UI", 10f),
                 Padding = new Padding(6, 0, 0, 0),   // align labels with the title inset
             };
-            // pill container supplies the inner horizontal padding (TextBox ignores Padding)
+            // pill container supplies the inner horizontal padding (TextBox ignores Padding).
+            // Vertical padding stays small: a single-line EDIT clips its text when its client
+            // height is under the font's line height (~19px at 10pt) — keep the box ≥ 22px.
             var field = new Panel
             {
                 Dock = DockStyle.Fill,
                 BackColor = Theme.Field,
-                Padding = new Padding(14, 5, 14, 5),
+                Padding = new Padding(14, 4, 14, 4),
                 Margin = new Padding(0, 2, 0, 2),
             };
             field.Resize += (_, _) =>
@@ -141,12 +143,10 @@ public class ChannelCard : Control
             var box = new HotkeyCaptureBox
             {
                 Dock = DockStyle.Fill,
-                Anchor = AnchorStyles.Left | AnchorStyles.Right,
                 Tag = def.GetHotkey(slot),
                 Text = def.GetHotkey(slot) ?? "(none)",
-                Font = new Font("Segoe UI", 10.5f),
+                Font = new Font("Segoe UI", 10f),
                 Margin = new Padding(0),
-                ClipPill = false,   // the container owns the pill shape
             };
             var clear = new Button
             {

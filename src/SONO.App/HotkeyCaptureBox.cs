@@ -2,56 +2,15 @@ using System.Drawing.Drawing2D;
 
 namespace SONO.App;
 
-/// <summary>A small text box that captures a key combo into "Ctrl+Alt+X" text.</summary>
-public class HotkeyCaptureBox : TextBox
+/// <summary>
+/// Shortcut capture field — a fully owner-drawn control (deliberately NOT a TextBox:
+/// native EDIT painting broke with region-clipped ancestors). Click to capture; the next
+/// key combo (or bare multimedia key) becomes the binding. Esc cancels, ✕-button clears.
+/// </summary>
+public class HotkeyCaptureBox : Control
 {
     private static readonly HashSet<string> ModifierNames = new(StringComparer.OrdinalIgnoreCase)
         { "Control", "ControlKey", "Menu", "Alt", "Shift", "ShiftKey", "LWin", "RWin", "LControlKey", "RControlKey", "LMenu", "RMenu", "LShiftKey", "RShiftKey" };
-
-    public bool Capturing { get; private set; }
-
-    public HotkeyCaptureBox()
-    {
-        ReadOnly = true;
-        BackColor = Theme.Field;
-        ForeColor = Theme.Text;
-        BorderStyle = BorderStyle.None;      // material filled field: no stroke, tone only
-        PlaceholderText = "click, then press keys";
-    }
-
-    /// <summary>When false, the box skips its own pill clipping (a container owns the shape).</summary>
-    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public bool ClipPill { get; set; } = true;
-
-    protected override void OnResize(EventArgs e)
-    {
-        base.OnResize(e);
-        if (!ClipPill) return;
-        if (Width <= 1 || Height <= 1) return;
-        Region = new Region(SliderBar.RoundRect(0, 0, Width, Height, Height / 2));  // pill-shaped field
-    }
-
-    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
-    {
-        if (!Focused || !Capturing) return base.ProcessCmdKey(ref msg, keyData);
-        return false;
-    }
-
-    protected override void OnGotFocus(EventArgs e)
-    {
-        base.OnGotFocus(e);
-        Capturing = true;
-        BackColor = Theme.FieldFocus;   // material: filled field brightens on focus
-        Text = "Press a combo…";
-    }
-
-    protected override void OnLostFocus(EventArgs e)
-    {
-        base.OnLostFocus(e);
-        Capturing = false;
-        BackColor = Theme.Field;
-        Text = Tag as string ?? "";
-    }
 
     private static readonly HashSet<Keys> MediaKeys = new()
     {
@@ -70,42 +29,111 @@ public class HotkeyCaptureBox : TextBox
         [Keys.MediaPlayPause] = "MediaPlay",
     };
 
+    public bool Capturing { get; private set; }
+
+    /// <summary>Raised with the captured combo text, or null when cleared with Esc.</summary>
+    public event Action<string?>? Committed;
+
+    public HotkeyCaptureBox()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint
+                 | ControlStyles.ResizeRedraw | ControlStyles.Selectable | ControlStyles.StandardClick, true);
+        TabStop = true;
+        Cursor = Cursors.Hand;
+    }
+
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public string HotkeyText
+    {
+        get => Tag as string ?? "(none)";
+        set { Tag = value; Invalidate(); }
+    }
+
+    protected override void OnEnter(EventArgs e)
+    {
+        base.OnEnter(e);
+        Capturing = true;
+        Invalidate();
+    }
+
+    protected override void OnLeave(EventArgs e)
+    {
+        base.OnLeave(e);
+        Capturing = false;
+        Invalidate();
+    }
+
+    protected override void OnClick(EventArgs e)
+    {
+        base.OnClick(e);
+        Focus();
+    }
+
+    protected override void OnPreviewKeyDown(PreviewKeyDownEventArgs e)
+    {
+        // keep arrow/tab keys for capture instead of focus navigation
+        if (Capturing) e.IsInputKey = true;
+        base.OnPreviewKeyDown(e);
+    }
+
     protected override void OnKeyDown(KeyEventArgs e)
     {
-        e.SuppressKeyPress = true;
-        if (e.KeyCode == Keys.Escape) { Commit(null); return; }
+        base.OnKeyDown(e);
+        if (!Capturing) return;
+        e.Handled = true;
+
+        if (e.KeyCode == Keys.Escape) { SetHotkey(null); return; }
 
         var key = e.KeyCode;
-        if (ModifierNames.Contains(key.ToString())) return; // wait for a non-modifier
+        if (ModifierNames.Contains(key.ToString())) return;   // wait for a non-modifier
 
         var parts = new List<string>();
         if (e.Control) parts.Add("Ctrl");
         if (e.Alt) parts.Add("Alt");
         if (e.Shift) parts.Add("Shift");
         if (e.Modifiers.HasFlag(Keys.LWin) || e.Modifiers.HasFlag(Keys.RWin)) parts.Add("Win");
-        // media keys may be captured bare; other keys require a modifier
-        if (parts.Count == 0 && !MediaKeys.Contains(key)) return;
+        if (parts.Count == 0 && !MediaKeys.Contains(key)) return;   // bare key: only media allowed
         parts.Add(FormatKey(key));
-        Commit(string.Join("+", parts));
+        SetHotkey(string.Join("+", parts));
+    }
+
+    protected override void OnKeyPress(KeyPressEventArgs e) { e.Handled = true; }   // no beep
+
+    private void SetHotkey(string? combo)
+    {
+        HotkeyText = combo ?? "(none)";
+        Committed?.Invoke(combo);
+        Invalidate();
     }
 
     private static string FormatKey(Keys key)
     {
         if (MediaNames.TryGetValue(key, out var mediaName)) return mediaName;
         var s = key.ToString();
-        if (s.Length == 2 && s[0] == 'D' && char.IsDigit(s[1])) return s[1..]; // Keys.D1 → "1"
+        if (s.Length == 2 && s[0] == 'D' && char.IsDigit(s[1])) return s[1..];   // D1 → "1"
         if (s.Length == 1 && char.IsLetter(s[0])) return s.ToUpperInvariant();
-        return s; // "F1", "Space", "Insert", … — HotkeyManager understands these
+        return s;   // "F1", "Space", …
     }
 
-    /// <summary>Raised with the captured combo text, or null when cleared with Esc.</summary>
-    public event Action<string?>? Committed;
-
-    private void Commit(string? combo)
+    protected override void OnPaint(PaintEventArgs e)
     {
-        Tag = combo;
-        Text = combo ?? "(none)";
-        if (combo is not null) Parent?.Focus(); // release focus so the next click re-arms another box
-        Committed?.Invoke(combo);
+        var g = e.Graphics;
+        using var bg = new SolidBrush(Capturing ? Theme.FieldFocus : Theme.Field);
+        g.Clear(BackColor);
+        g.FillPath(bg, SliderBar.RoundRect(0, 0, Width, Height, Height / 2));
+
+        string text = Capturing ? "Press a combo…" : HotkeyText;
+        var color = Capturing ? Theme.Accent : (Text == "(none)" || HotkeyText == "(none)" ? Theme.Muted : Theme.Text);
+        TextRenderer.DrawText(g, text, Font, ClientRectangle, color,
+            TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPadding |
+            TextFormatFlags.EndEllipsis);
+        if (Capturing)
+        {
+            // simple focus ring (material)
+            using var pen = new Pen(Theme.Accent, 1.6f);
+            g.DrawPath(pen, SliderBar.RoundRect(1, 1, Width - 3, Height - 3, Height / 2 - 1));
+        }
     }
+
+    protected override void OnPaddingChanged(EventArgs e) { base.OnPaddingChanged(e); Invalidate(); }
 }
