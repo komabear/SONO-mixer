@@ -196,7 +196,8 @@ public class MixerForm : Form
         right.Controls.Add(_appList);
         right.Controls.Add(_status);
 
-        // theme mascot (e.g. Miku), pinned to the bottom-right corner of the Applications panel
+        // theme mascot (e.g. Miku): pinned bottom-right via a resize handler — anchors are
+        // unreliable here because the panel still has a placeholder size during construction
         if (Theme.Current.ImagePath is string img)
         {
             var full = Path.Combine(AppContext.BaseDirectory, img);
@@ -206,12 +207,13 @@ public class MixerForm : Form
                 {
                     Image = Image.FromFile(full),
                     SizeMode = PictureBoxSizeMode.Zoom,
-                    Size = new Size(96, 96),
-                    Location = new Point(292 - 96, 604 - 96),
-                    Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                    Size = new Size(110, 110),
                     BackColor = Color.Transparent,
                 };
+                void PlaceMascot() => mascot.Location = new Point(right.Width - 110 - 6, right.Height - 110 - 62);
                 right.Controls.Add(mascot);
+                right.Resize += (_, _) => PlaceMascot();
+                PlaceMascot();
                 mascot.BringToFront();
             }
         }

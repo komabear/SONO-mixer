@@ -142,12 +142,12 @@ public static class ThemeCatalog
         new ThemeDef
         {
             Id = "miku", Name = "Hatsune Miku",
-            Bg = Color.FromArgb(11, 22, 29), Card = Color.FromArgb(18, 48, 57),
-            Elevated = Color.FromArgb(23, 65, 76), Field = Color.FromArgb(29, 79, 91), FieldFocus = Color.FromArgb(38, 97, 111),
-            Chip = Color.FromArgb(29, 79, 91), Border = Color.FromArgb(39, 96, 109),
-            Text = Color.FromArgb(232, 251, 247), Muted = Color.FromArgb(111, 163, 166),
-            Accent = Color.FromArgb(57, 197, 187), Danger = Color.FromArgb(255, 94, 138),
-            Palette = new[] { "#39C5BB", "#FF6FA5", "#7DE8E0", "#5B8FA8", "#E4527C", "#9FF0E6", "#4FC1E9", "#B0E2FF" },
+            Bg = Color.FromArgb(0x37, 0x3b, 0x3e), Card = Color.FromArgb(0x43, 0x48, 0x4c),
+            Elevated = Color.FromArgb(0x4b, 0x51, 0x55), Field = Color.FromArgb(0x52, 0x58, 0x5c), FieldFocus = Color.FromArgb(0x5d, 0x64, 0x68),
+            Chip = Color.FromArgb(0x52, 0x58, 0x5c), Border = Color.FromArgb(0x5d, 0x64, 0x68),
+            Text = Color.FromArgb(0xbe, 0xc8, 0xd1), Muted = Color.FromArgb(0x8b, 0x97, 0x9e),
+            Accent = Color.FromArgb(0x86, 0xce, 0xcb), Danger = Color.FromArgb(0xe1, 0x28, 0x85),
+            Palette = new[] { "#86CECB", "#137A7F", "#BEC8D1", "#E12885", "#5B8FA8", "#7DE8DD", "#9FB4BD", "#4FC1E9" },
             ImagePath = @"Assets\miku.png",
         },
     };
