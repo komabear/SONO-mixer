@@ -626,6 +626,7 @@ public class MixerForm : Form
             case HotkeySlot.VolUp: def.Volume = MathF.Min(1f, def.Volume + step); break;
             case HotkeySlot.Mute: def.Muted = !def.Muted; break;
         }
+        Save();
         _engine.ReconcileNow();
         RefreshRoutingVolumes();
         if (_last is not null) UpdateCards(_last);
