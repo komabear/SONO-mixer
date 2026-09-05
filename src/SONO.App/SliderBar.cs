@@ -39,6 +39,7 @@ public class SliderBar : Control
 
     protected override void OnPaint(PaintEventArgs e)
     {
+        if (Width <= 1 || Height <= 1) return;
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         int cy = Height / 2;
@@ -70,7 +71,9 @@ public class SliderBar : Control
     internal static GraphicsPath RoundRect(int x, int y, int w, int h, int r)
     {
         var p = new GraphicsPath();
+        if (w <= 0 || h <= 0) { p.AddRectangle(new Rectangle(x, y, 1, 1)); return p; }
         r = Math.Min(r, Math.Min(w, h) / 2);
+        if (r <= 0) { p.AddRectangle(new Rectangle(x, y, w, h)); return p; }
         p.AddArc(x, y, r * 2, r * 2, 180, 90);
         p.AddArc(x + w - r * 2, y, r * 2, r * 2, 270, 90);
         p.AddArc(x + w - r * 2, y + h - r * 2, r * 2, r * 2, 0, 90);
