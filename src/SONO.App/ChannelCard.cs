@@ -213,7 +213,6 @@ public class ChannelCard : Control
         _slider.SetValueExternal(def.Volume);
         UpdateMute();
         UpdateDb();
-        UpdateDeviceChip();
     }
 
     private static Color ColorOf(ChannelDefinition def) => ColorTranslator.FromHtml(def.ColorHex);
