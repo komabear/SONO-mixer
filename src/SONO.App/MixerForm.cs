@@ -744,4 +744,11 @@ public class MixerForm : Form
 public class BufferedFlow : FlowLayoutPanel
 {
     public BufferedFlow() => DoubleBuffered = true;
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (Width <= 1 || Height <= 1) return;
+        Region = new Region(SliderBar.RoundRect(0, 0, Width, Height, 14));
+    }
 }

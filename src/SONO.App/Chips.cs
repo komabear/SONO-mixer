@@ -44,6 +44,10 @@ internal static class Chips
             : "\nDrag onto a channel to assign it"));
         var down = Point.Empty;
         l.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left) down = e.Location; };
+        // rounded chip (material shape): clip to a rounded rect whenever the size settles
+        void Round() { if (l.Width > 1 && l.Height > 1) l.Region = new Region(SliderBar.RoundRect(0, 0, l.Width, l.Height, 10)); }
+        l.SizeChanged += (_, _) => Round();
+        l.Padding = new Padding(9, 5, 9, 5);
         l.MouseMove += (_, e) =>
         {
             if (e.Button == MouseButtons.Left &&
