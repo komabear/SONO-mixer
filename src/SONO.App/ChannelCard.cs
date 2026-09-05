@@ -24,6 +24,7 @@ public class ChannelCard : Control
     private readonly Button _gear;
     private readonly SliderBar _slider;
     private readonly Dictionary<HotkeySlot, HotkeyCaptureBox> _hotkeyBoxes = new();
+    private readonly Dictionary<HotkeySlot, Panel> _hotkeyFields = new();
 
     public string ChannelId => _def.Id;
 
@@ -104,8 +105,9 @@ public class ChannelCard : Control
         _slider.EditCommitted += _ => VolumeCommitted?.Invoke(ChannelId);
         volWrap.Controls.Add(_slider);
 
-        // ---- hotkeys (bottom) — 3rd column is an explicit clear button ----
-        var hotkeys = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = HotkeyRowH * 3 + 6, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 3 };
+        // ---- hotkeys (bottom, with breathing room) — 3rd column is an explicit clear button ----
+        var hotkeysWrap = new Panel { Dock = DockStyle.Bottom, Height = HotkeyRowH * 3 + 22, BackColor = Color.Transparent, Padding = new Padding(0, 10, 0, 12) };
+        var hotkeys = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 3 };
         hotkeys.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
         hotkeys.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         hotkeys.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30));
@@ -173,8 +175,10 @@ public class ChannelCard : Control
             hotkeys.Controls.Add(field, 1, y);
             hotkeys.Controls.Add(clear, 2, y);
             _hotkeyBoxes[slot] = box;
+            _hotkeyFields[slot] = field;
             y++;
         }
+        hotkeysWrap.Controls.Add(hotkeys);
 
         // ---- apps area (fill): tonal surface, no stroke (material) ----
         var appsWrap = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Elevated, Padding = new Padding(1) };
@@ -212,14 +216,23 @@ public class ChannelCard : Control
         // header (name/mute/gear) → slim volume bar → apps (fill) → hotkeys.
         Controls.Add(appsWrap);
         Controls.Add(volWrap);
-        Controls.Add(hotkeys);
+        Controls.Add(hotkeysWrap);
         Controls.Add(header);
+        Resize += (_, _) => CompactForSize();
 
         _slider.SetValueExternal(def.Volume);
         UpdateMute();
     }
 
     private static Color ColorOf(ChannelDefinition def) => ColorTranslator.FromHtml(def.ColorHex);
+
+    /// <summary>At small card sizes the shortcut block (and mascot in MixerForm) hide to save space.</summary>
+    private void CompactForSize()
+    {
+        bool compact = Height < 480;
+        foreach (var f in _hotkeyFields.Values) f.Visible = !compact;
+        foreach (var b in _hotkeyBoxes.Values) b.Visible = !compact;
+    }
 
     /// <summary>Periodic refresh from the engine snapshot.</summary>
     public void Update(IReadOnlyList<SessionView> owned, string? hotkeyError)

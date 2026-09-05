@@ -18,10 +18,12 @@ public class MixerForm : Form
     private readonly ToolStripMenuItem _miAutostart, _miMinimized;
     private readonly Label _status;
     private readonly TableLayoutPanel _table;
-    private readonly DarkComboBox _outputPick = new();
+    private DarkComboBox _outputPick = new();
+    private Button _outputBtn = new();
+    private ToolStripDropDown _outputMenu = new();
     private readonly List<string> _outputIds = new();
     private bool _suppressPick;
-    private readonly FlowLayoutPanel _appList;
+    private readonly SmoothFlowPanel _appList = new();
     private bool _allowClose;
     private bool _balloonShown;
     private string _hotkeyError = "";
@@ -143,7 +145,7 @@ public class MixerForm : Form
         settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep, miTheme });
         settingsBtn.Click += (_, _) => settingsMenu.Show(settingsBtn, new Point(0, settingsBtn.Height));
 
-        // ---- output picker: where the mixed channels come out ----
+        // ---- OUTPUT: field-styled button opening a fully themed dropdown (no native combo popup) ----
         var outCaption = new Label
         {
             Text = "OUTPUT  (mixed channels play here)",
@@ -152,22 +154,23 @@ public class MixerForm : Form
             Size = new Size(288, 16),
             Font = new Font("Segoe UI", 7f, FontStyle.Bold),
         };
-        _outputPick = new DarkComboBox
+        _outputMenu = new ToolStripDropDown();
+        MenuTheme.Stylize(_outputMenu);
+        _outputBtn = new Button
         {
             Location = new Point(10, 70),
-            Size = new Size(292, 28),
+            Size = new Size(292, 30),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             Font = new Font("Segoe UI", 10f),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Field,
+            ForeColor = Theme.Text,
+            Cursor = Cursors.Hand,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(12, 0, 0, 0),
         };
-        _outputPick.DropDown += (_, _) => PopulateOutputPicker();
-        _outputPick.SelectedIndexChanged += (_, _) =>
-        {
-            if (_suppressPick || _outputPick.SelectedIndex < 0 || _outputPick.SelectedIndex >= _outputIds.Count) return;
-            _settings.RealOutputId = _outputIds[_outputPick.SelectedIndex];
-            Save();
-            _routing.Rebuild(_settings.RealOutputId);
-            if (_routing.RealOutputId != _settings.RealOutputId) { _settings.RealOutputId = _routing.RealOutputId; Save(); }
-        };
+        _outputBtn.FlatAppearance.BorderSize = 0;
+        _outputBtn.Click += (_, _) => ShowOutputMenu();
 
         // load theme mascot (e.g. Miku) early: its presence insets the app list so a visible
         // parent strip exists at the bottom for the owner-drawn image
@@ -179,7 +182,7 @@ public class MixerForm : Form
         }
         int mascotInset = _mascot is null ? 0 : 158;
 
-        _appList = new BufferedFlow
+        _appList = new SmoothFlowPanel
         {
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
@@ -191,11 +194,13 @@ public class MixerForm : Form
             Padding = new Padding(6),
         };
         // keep the reserved mascot strip visible at ANY window height: clamp the list bottom
-        // on every layout pass (anchors would otherwise stretch it over the strip)
+        // on every layout pass (anchors would otherwise stretch it over the strip).
+        // At small sizes the mascot hides entirely and the strip is released.
         if (_mascot is not null)
         {
             void ClampList()
             {
+                if (right.Height < 430) { return; }   // compact: list stretches, mascot hidden
                 int maxBottom = right.Height - 36 - 130 - 4;   // status line + mascot strip
                 if (_appList.Bottom > maxBottom) _appList.Height = maxBottom - _appList.Top;
             }
@@ -215,17 +220,18 @@ public class MixerForm : Form
         right.Controls.Add(rightSub);
         right.Controls.Add(settingsBtn);
         right.Controls.Add(outCaption);
-        right.Controls.Add(_outputPick);
+        right.Controls.Add(_outputBtn);
         right.Controls.Add(_appList);
         right.Controls.Add(_status);
 
         // theme mascot: owner-drawn in the reserved strip between the app list and the status
         // line → behind children is impossible there (no children), real alpha, bottom-center.
+        // Hidden when the panel is too short (compact mode).
         if (_mascot is not null)
         {
             right.Paint += (_, e) =>
             {
-                if (_mascot is null) return;
+                if (_mascot is null || right.Height < 430) return;
                 int w = 130, h = (int)(130f * _mascot.Height / _mascot.Width);
                 int x = (right.Width - w) / 2;
                 int y = right.Height - 34 - h - 2;   // above the status line
@@ -273,7 +279,7 @@ public class MixerForm : Form
             if (_settings.RealOutputId is string ro && _settings.Channels.Any(c => c.DeviceId == ro))
             { _settings.RealOutputId = null; Save(); }
             ResolveDeviceMappings();
-            PopulateOutputPicker();
+            UpdateOutputButtonLabel();
             _routing.Rebuild(_settings.RealOutputId);
             if (_routing.RealOutputId != _settings.RealOutputId)
             {
@@ -593,30 +599,54 @@ public class MixerForm : Form
         _table.ResumeLayout();
     }
 
-    /// <summary>Fill the output dropdown with all render devices except the virtual cables (feedback loop).</summary>
-    private void PopulateOutputPicker()
+    /// <summary>Build the themed output dropdown: all render devices except the virtual cables.</summary>
+    private void ShowOutputMenu()
     {
-        _suppressPick = true;
-        try
-        {
-            var en = new MMDeviceEnumerator();
-            var devices = en.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
-                .Where(d => !d.FriendlyName.Contains("Virtual Audio Cable", StringComparison.OrdinalIgnoreCase))
-                .ToList();
-            string defaultId = "";
-            try { defaultId = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console).ID; } catch { }
+        var en = new MMDeviceEnumerator();
+        var devices = en.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
+            .Where(d => !d.FriendlyName.Contains("Virtual Audio Cable", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        string defaultId = "";
+        try { defaultId = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console).ID; } catch { }
+        string current = _settings.RealOutputId is string r && devices.Any(d => d.ID == r) ? r : defaultId;
 
-            _outputPick.Items.Clear();
-            _outputIds.Clear();
-            foreach (var d in devices)
+        _outputMenu.Items.Clear();
+        _outputIds.Clear();
+        foreach (var d in devices)
+        {
+            _outputIds.Add(d.ID);
+            bool isDefault = d.ID == defaultId;
+            bool isCurrent = d.ID == current;
+            var item = new ToolStripMenuItem(isDefault ? d.FriendlyName + "   ◈ default" : d.FriendlyName)
             {
-                _outputPick.Items.Add(d.ID == defaultId ? d.FriendlyName + "   (Windows default)" : d.FriendlyName);
-                _outputIds.Add(d.ID);
-            }
-            string wanted = _settings.RealOutputId is string r && _outputIds.Contains(r) ? r : defaultId;
-            _outputPick.SelectedIndex = _outputIds.IndexOf(wanted);
+                Font = new Font("Segoe UI", 10f, isCurrent ? FontStyle.Bold : FontStyle.Regular),
+                ForeColor = isCurrent ? Theme.Accent : Theme.Text,
+            };
+            var captured = d.ID;
+            item.Click += (_, _) =>
+            {
+                _settings.RealOutputId = captured;
+                Save();
+                _routing.Rebuild(_settings.RealOutputId);
+                if (_routing.RealOutputId != _settings.RealOutputId) { _settings.RealOutputId = _routing.RealOutputId; Save(); }
+                UpdateOutputButtonLabel(captured);
+            };
+            _outputMenu.Items.Add(item);
         }
-        finally { _suppressPick = false; }
+        _outputMenu.Show(_outputBtn, new Point(0, _outputBtn.Height));
+        UpdateOutputButtonLabel(current);
+    }
+
+    private void UpdateOutputButtonLabel(string? forced = null)
+    {
+        string id = forced ?? _settings.RealOutputId ?? "";
+        string name = "?";
+        try { name = new MMDeviceEnumerator().GetDevice(id).FriendlyName; }
+        catch
+        {
+            try { name = new MMDeviceEnumerator().GetDefaultAudioEndpoint(DataFlow.Render, Role.Console).FriendlyName; } catch { }
+        }
+        _outputBtn.Text = "▾  " + name;
     }
 
     private void RefreshRoutingVolumes()
