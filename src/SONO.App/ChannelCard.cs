@@ -291,11 +291,13 @@ public class ChannelCard : Control
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        if (Width <= 1 || Height <= 1) return;   // transient zero-size during table layout
         Region = new Region(SliderBar.RoundRect(0, 0, Width, Height, 12));
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
+        if (Width <= 1 || Height <= 1) return;
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         using var bg = SliderBar.RoundRect(0, 0, Width - 1, Height - 1, 12);
