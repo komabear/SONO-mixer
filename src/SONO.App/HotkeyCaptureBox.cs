@@ -19,18 +19,6 @@ public class HotkeyCaptureBox : TextBox
         PlaceholderText = "click, then press keys";
     }
 
-    protected override void OnGotFocus(EventArgs e)
-    {
-        base.OnGotFocus(e);
-        BackColor = Theme.FieldFocus;
-    }
-
-    protected override void OnLostFocus(EventArgs e)
-    {
-        base.OnLostFocus(e);
-        BackColor = Theme.Field;
-    }
-
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         if (!Focused || !Capturing) return base.ProcessCmdKey(ref msg, keyData);
@@ -41,6 +29,7 @@ public class HotkeyCaptureBox : TextBox
     {
         base.OnGotFocus(e);
         Capturing = true;
+        BackColor = Theme.FieldFocus;   // material: filled field brightens on focus
         Text = "Press a combo…";
     }
 
@@ -48,6 +37,7 @@ public class HotkeyCaptureBox : TextBox
     {
         base.OnLostFocus(e);
         Capturing = false;
+        BackColor = Theme.Field;
         Text = Tag as string ?? "";
     }
 
