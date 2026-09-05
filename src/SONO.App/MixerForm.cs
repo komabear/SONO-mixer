@@ -142,7 +142,7 @@ public class MixerForm : Form
         right.Controls.Add(_appList);
         right.Controls.Add(_status);
         Controls.Add(right);
-        right.BringToFront();
+        _table.BringToFront();   // Fill control must be laid out LAST so the Right panel reserves its strip
 
         // ---- tray ----
         _tray = new NotifyIcon
