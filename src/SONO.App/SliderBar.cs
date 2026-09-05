@@ -25,7 +25,9 @@ public class SliderBar : Control
     public SliderBar()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
-                 | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+                 | ControlStyles.UserPaint | ControlStyles.ResizeRedraw
+                 | ControlStyles.SupportsTransparentBackColor, true);
+        BackColor = Color.Transparent;
         Cursor = Cursors.Hand;
     }
 

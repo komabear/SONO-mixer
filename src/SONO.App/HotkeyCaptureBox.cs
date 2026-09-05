@@ -13,7 +13,9 @@ public class HotkeyCaptureBox : TextBox
     public HotkeyCaptureBox()
     {
         ReadOnly = true;
-        BackColor = SystemColors.Window;
+        BackColor = Theme.Chip;
+        ForeColor = Theme.Text;
+        BorderStyle = BorderStyle.FixedSingle;
         PlaceholderText = "click, then press keys";
     }
 

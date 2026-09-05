@@ -132,10 +132,11 @@ public class ChannelCard : Control
         };
         volRow.Controls.Add(_db, 2, 0);
 
-        // ---- hotkeys (bottom) ----
-        var hotkeys = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = HotkeyRowH * 3 + 6, BackColor = Color.Transparent, ColumnCount = 2, RowCount = 3 };
+        // ---- hotkeys (bottom) — 3rd column is an explicit clear button ----
+        var hotkeys = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = HotkeyRowH * 3 + 6, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 3 };
         hotkeys.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
         hotkeys.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        hotkeys.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30));
         int y = 0;
         foreach (var slot in Slots)
         {
@@ -158,10 +159,31 @@ public class ChannelCard : Control
                 Font = new Font("Segoe UI", 10.5f),
                 Margin = new Padding(0, 2, 0, 2),
             };
+            var clear = new Button
+            {
+                Text = "✕",
+                Dock = DockStyle.Fill,
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Theme.Muted,
+                BackColor = Color.Transparent,
+                Cursor = Cursors.Hand,
+                Margin = new Padding(4, 2, 0, 2),
+            };
+            clear.FlatAppearance.BorderSize = 0;
             var slotCaptured = slot;
-            box.Committed += text => { _def.SetHotkey(slotCaptured, text); HotkeySet?.Invoke(ChannelId, slotCaptured, text); };
+            void ApplyHotkey(string? text)
+            {
+                _def.SetHotkey(slotCaptured, text);
+                box.Tag = text;
+                box.Text = text ?? "(none)";
+                HotkeySet?.Invoke(ChannelId, slotCaptured, text);
+            }
+            box.Committed += ApplyHotkey;
+            clear.Click += (_, _) => ApplyHotkey(null);
+            Tips.SetToolTip(clear, "Clear this shortcut");
             hotkeys.Controls.Add(lbl, 0, y);
             hotkeys.Controls.Add(box, 1, y);
+            hotkeys.Controls.Add(clear, 2, y);
             _hotkeyBoxes[slot] = box;
             y++;
         }
@@ -198,11 +220,13 @@ public class ChannelCard : Control
         appsWrap.Controls.Add(_apps);
         appsWrap.Controls.Add(caption);
 
-        // dock order: index 0 is laid out last → add Fill first, then Top/Bottom rows
+        // dock order: WinForms lays out docked children in REVERSE add order, so the
+        // header must be added LAST to be processed FIRST (top strip). Result top→bottom:
+        // header (name/device/gear) → mute+volume → apps (fill) → hotkeys.
         Controls.Add(appsWrap);
-        Controls.Add(header);
         Controls.Add(volRow);
         Controls.Add(hotkeys);
+        Controls.Add(header);
 
         _slider.SetValueExternal(def.Volume);
         UpdateMute();
