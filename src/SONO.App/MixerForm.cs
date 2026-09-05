@@ -143,7 +143,9 @@ public class MixerForm : Form
             };
             miTheme.DropDownItems.Add(item);
         }
-        settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep, miTheme });
+        var miSetup = new ToolStripMenuItem("Run automatic device setup…");
+        miSetup.Click += (_, _) => RunDeviceSetupWizard();
+        settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep, miTheme, miSetup });
         settingsBtn.Click += (_, _) => settingsMenu.Show(settingsBtn, new Point(0, settingsBtn.Height));
 
         // ---- OUTPUT: field-styled button opening a fully themed dropdown (no native combo popup) ----
@@ -222,11 +224,14 @@ public class MixerForm : Form
             if (_misroutes.Count > 0)
             {
                 var lines = _misroutes.Take(6).Select(m => $"• {m.Exe} → should play on \"SONO - {m.ChannelName}\" (now on {m.ActualDevice})");
-                MessageBox.Show(this,
+                var ask = MessageBox.Show(this,
                     "These apps are not playing into their channel's virtual device, so their channel slider cannot control them:\n\n"
                     + string.Join("\n", lines)
-                    + "\n\nFix: open Windows sound settings (Volume mixer) and set each app's Output to its channel's \"SONO - …\" device. This is a one-time Windows setting per app — SONO cannot change it for you (Windows provides no API), but SONO will keep watch and tell you when something drifts.",
-                    "Mis-routed apps", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    + "\n\nOpen Windows Volume mixer now so you can set each app's Output to its channel's \"SONO - …\" device?\n"
+                    + "(This is a one-time Windows setting per app — Windows provides no API to set it programmatically.)",
+                    "Mis-routed apps", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                if (ask == DialogResult.Yes)
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:appsvolume") { UseShellExecute = true });
             }
         };
 
@@ -297,6 +302,20 @@ public class MixerForm : Form
             UpdateOutputButtonLabel();
             _routing.Rebuild(_settings.RealOutputId);
             RefreshRoutingVolumes();
+            // first-run: VAC present but no SONO - X endpoints yet → offer the one-click wizard
+            if (!Core.SystemIntegrations.DeviceSetup.SonoEndpointsPresent()
+                && Core.SystemIntegrations.DeviceSetup.VacServicePresent)
+            {
+                BeginInvoke(() =>
+                {
+                    if (MessageBox.Show(this,
+                            "Welcome to SONO Mixer!\n\nNo \"SONO - …\" audio devices were found. Run the automatic setup now?\n\n" +
+                            "It will configure the Virtual Audio Cable driver (4 cables), name the devices\n" +
+                            "SONO - Game / Chat / Media / Aux, and activate them. Requires administrator rights.",
+                            "SONO Mixer — first run", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                        RunDeviceSetupWizard();
+                });
+            }
             if (_launchedAtBoot && _settings.StartMinimized) HideToTray(showBalloon: true);
         };
 
@@ -612,6 +631,51 @@ public class MixerForm : Form
             return d.FriendlyName;
         }
         catch { return "?"; }
+    }
+
+    /// <summary>One-elevation setup: cables=4, endpoint renames, device bounce. Reports per-step results.</summary>
+    private void RunDeviceSetupWizard()
+    {
+        var endpoints = Core.SystemIntegrations.DeviceSetup.VacRenderEndpoints();
+        if (endpoints.Count == 0)
+        {
+            MessageBox.Show(this,
+                "No Virtual Audio Cable devices were found.\n\nInstall VAC 4.x first (see README), then run this again.",
+                "SONO Mixer — setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        if (endpoints.Count < 4)
+            MessageBox.Show(this,
+                $"Only {endpoints.Count} VAC device(s) found — 4 expected. Setup will rename what exists; set the cable count to 4 in the VAC Control Panel for full channels.",
+                "SONO Mixer — setup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+        var script = Core.SystemIntegrations.DeviceSetup.BuildScript(endpoints);
+        string log;
+        try { log = Core.SystemIntegrations.DeviceSetup.RunElevated(script); }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Setup was cancelled or failed: {ex.Message}", "SONO Mixer — setup",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        // wait a moment for the device bounce to re-enumerate, then re-resolve
+        var done = new System.Windows.Forms.Timer { Interval = 4500 };
+        done.Tick += (_, _) =>
+        {
+            done.Stop();
+            done.Dispose();
+            ResolveDeviceMappings();
+            _routing.Rebuild(_settings.RealOutputId);
+            UpdateOutputButtonLabel();
+            var ok = log.Contains(": OK");
+            MessageBox.Show(this,
+                (ok ? "Device setup finished.\n\n" : "Setup finished with some errors.\n\n") +
+                log.Replace("\r\n", "\n"),
+                "SONO Mixer — setup", MessageBoxButtons.OK,
+                ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
+        };
+        done.Start();
     }
 
     /// <summary>Wide window → 4 columns; narrow/square → 2×2, so cards never get cramped.</summary>
