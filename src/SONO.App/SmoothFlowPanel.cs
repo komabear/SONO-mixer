@@ -37,15 +37,32 @@ public class SmoothFlowPanel : BufferedFlow
         }
     }
 
+    private bool _hidingBars;
+
     private void HideBars()
     {
-        if (!IsHandleCreated) return;
+        if (_hidingBars || !IsHandleCreated) return;
+        _hidingBars = true;
         try
         {
             ShowScrollBar(Handle, SB_HORZ, false);
             ShowScrollBar(Handle, SB_VERT, false);
         }
         catch { }
+        finally { _hidingBars = false; }
+    }
+
+    /// <summary>Scrollbars live in the non-client area: swallow WM_NCPAINT (after re-hiding)
+    /// so the native chrome can never flash, no matter what re-shows it internally.</summary>
+    protected override void WndProc(ref Message m)
+    {
+        const int WM_NCPAINT = 0x0085;
+        if (m.Msg == WM_NCPAINT)
+        {
+            HideBars();
+            return;   // skip default NC painting — this control draws no border
+        }
+        base.WndProc(ref m);
     }
 
     protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); HideBars(); }
