@@ -190,9 +190,8 @@ public class ChannelCard : Control
             y++;
         }
 
-        // ---- apps area (fill): caption + flow ----
-        var appsWrap = new Panel { Dock = DockStyle.Fill, BackColor = Theme.CardInner, Padding = new Padding(1) };
-        appsWrap.Paint += (_, e) => e.Graphics.DrawRectangle(new Pen(Theme.Border), 0, 0, appsWrap.Width - 1, appsWrap.Height - 1);
+        // ---- apps area (fill): tonal surface, no stroke (material) ----
+        var appsWrap = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Elevated, Padding = new Padding(1) };
         var caption = new Label
         {
             Text = "APPS  (drag to route)",
@@ -207,7 +206,7 @@ public class ChannelCard : Control
         _apps = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            BackColor = Theme.CardInner,
+            BackColor = Theme.Elevated,
             Padding = new Padding(5),
             AllowDrop = true,
         };

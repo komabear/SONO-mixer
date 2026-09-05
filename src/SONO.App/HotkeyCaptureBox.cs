@@ -13,10 +13,22 @@ public class HotkeyCaptureBox : TextBox
     public HotkeyCaptureBox()
     {
         ReadOnly = true;
-        BackColor = Theme.Chip;
+        BackColor = Theme.Field;
         ForeColor = Theme.Text;
-        BorderStyle = BorderStyle.FixedSingle;
+        BorderStyle = BorderStyle.None;      // material filled field: no stroke, tone only
         PlaceholderText = "click, then press keys";
+    }
+
+    protected override void OnGotFocus(EventArgs e)
+    {
+        base.OnGotFocus(e);
+        BackColor = Theme.FieldFocus;
+    }
+
+    protected override void OnLostFocus(EventArgs e)
+    {
+        base.OnLostFocus(e);
+        BackColor = Theme.Field;
     }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)

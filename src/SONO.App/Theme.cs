@@ -13,6 +13,11 @@ internal static class Theme
     public static readonly Color Accent = Color.FromArgb(122, 162, 247);
     public static readonly Color Danger = Color.FromArgb(247, 118, 142);
 
+    // Material-style tonal surfaces (dark theme: elevated = lighter)
+    public static readonly Color Elevated = Color.FromArgb(38, 42, 61);      // inner surfaces (apps area)
+    public static readonly Color Field = Color.FromArgb(44, 48, 70);         // filled text fields
+    public static readonly Color FieldFocus = Color.FromArgb(56, 61, 88);    // focused text field
+
     public static readonly string[] Palette =
     {
         "#7aa2f7", "#9ece6a", "#bb9af7", "#e0af68", "#f7768e", "#7dcfff", "#c0caf5", "#ff9e64",

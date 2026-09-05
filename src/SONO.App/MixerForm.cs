@@ -18,7 +18,7 @@ public class MixerForm : Form
     private readonly ToolStripMenuItem _miAutostart, _miMinimized;
     private readonly Label _status;
     private readonly TableLayoutPanel _table;
-    private readonly ComboBox _outputPick = new();
+    private readonly DarkComboBox _outputPick = new();
     private readonly List<string> _outputIds = new();
     private bool _suppressPick;
     private readonly FlowLayoutPanel _appList;
@@ -38,7 +38,7 @@ public class MixerForm : Form
         Text = "SONO Mixer";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(1180, 660);
-        MinimumSize = new Size(940, 560);
+        MinimumSize = new Size(660, 560);
         BackColor = Theme.Bg;
         ForeColor = Theme.Text;
         Font = new Font("Segoe UI", 9.5f);
@@ -46,7 +46,7 @@ public class MixerForm : Form
         Icon = MakeIcon();
 
         // ---- left: channel tracks ----
-        // ---- left: channel tracks (responsive 4-column grid) ----
+        // ---- left: channel tracks (responsive grid: 4-up when wide, 2×2 when narrow) ----
         _table = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -58,6 +58,7 @@ public class MixerForm : Form
         };
         for (int i = 0; i < 4; i++) _table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
         _table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _table.Resize += (_, _) => ReflowGrid();
         _table.DragOver += (_, e) => { if (e.Data?.GetDataPresent("SONO_CARD") == true) e.Effect = DragDropEffects.Move; };
         _table.DragDrop += FlowCardDrop;
         Controls.Add(_table);
@@ -129,12 +130,8 @@ public class MixerForm : Form
             Size = new Size(288, 16),
             Font = new Font("Segoe UI", 7f, FontStyle.Bold),
         };
-        _outputPick = new ComboBox
+        _outputPick = new DarkComboBox
         {
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Theme.Chip,
-            ForeColor = Theme.Text,
             Location = new Point(10, 70),
             Size = new Size(292, 28),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
@@ -207,6 +204,7 @@ public class MixerForm : Form
         Load += (_, _) =>
         {
             BuildCards();
+            ReflowGrid();
             IReadOnlyList<ChannelDefinition> Snapshot() { lock (_settings) return _settings.Channels.ToList(); }
             _engine.SetChannelSource(Snapshot);
             _engine.Tick += snap => BeginInvoke(() => OnTick(snap));
@@ -498,6 +496,26 @@ public class MixerForm : Form
             return d.FriendlyName;
         }
         catch { return "?"; }
+    }
+
+    /// <summary>Wide window → 4 columns; narrow/square → 2×2, so cards never get cramped.</summary>
+    private void ReflowGrid()
+    {
+        if (_table.Width <= 0) return;
+        bool wide = _table.ClientSize.Width > 2 * (_table.ClientSize.Height * 4 / 3);
+        // wide: 4 cols × 1 row. narrow: 2 cols × 2 rows.
+        int wantCols = wide ? 4 : 2;
+        if (_table.ColumnCount == wantCols) return;
+
+        _table.SuspendLayout();
+        _table.ColumnCount = wantCols;
+        _table.RowCount = wide ? 1 : 2;
+        _table.ColumnStyles.Clear();
+        for (int i = 0; i < wantCols; i++) _table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / wantCols));
+        _table.RowStyles.Clear();
+        _table.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        if (!wide) _table.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        _table.ResumeLayout();
     }
 
     /// <summary>Fill the output dropdown with all render devices except the virtual cables (feedback loop).</summary>
