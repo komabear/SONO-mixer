@@ -214,7 +214,7 @@ public class MixerForm : Form
             // sanitize: real output must never be one of the channel cables (feedback loop)
             if (_settings.RealOutputId is string ro && _settings.Channels.Any(c => c.DeviceId == ro))
             { _settings.RealOutputId = null; Save(); }
-            SetupDefaultMappingIfNeeded();
+            ResolveDeviceMappings();
             PopulateOutputPicker();
             _routing.Rebuild(_settings.RealOutputId);
             if (_routing.RealOutputId != _settings.RealOutputId)
@@ -300,7 +300,6 @@ public class MixerForm : Form
         card.HotkeySet += (_, _, _) => { RebindHotkeys(); Save(); };
         card.DefinitionEdited += _ => Save();
         card.AddAppRequested += id => ShowAddAppDialog(id);
-        card.DevicePickRequested += id => ShowDevicePicker(id);
         card.MakeDefaultRequested += id =>
         {
             var d = _settings.Channels.FirstOrDefault(c => c.Id == id);
@@ -382,6 +381,13 @@ public class MixerForm : Form
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         live.UnionWith(_settings.KnownApps.Select(k => k.ToLowerInvariant()));
 
+        // exe → owning channel's color (for tinting the per-app sliders)
+        var exeColor = new Dictionary<string, Color>(StringComparer.OrdinalIgnoreCase);
+        lock (_settings)
+            foreach (var ch in _settings.Channels)
+                foreach (var exe in ch.Executables)
+                    exeColor[exe] = Theme.FromHex(ch.ColorHex);
+
         for (int i = _appList.Controls.Count - 1; i >= 0; i--)
             if (_appList.Controls[i] is Panel p && p.Tag is string exe && !live.Contains(exe))
             { _appRows.Remove(exe); _appList.Controls.RemoveAt(i); }
@@ -400,6 +406,7 @@ public class MixerForm : Form
             if (row.Controls[1] is SliderBar s)
             {
                 s.Enabled = !ownedExes.Contains(exe);
+                s.Fill = exeColor.TryGetValue(exe, out var c) ? c : Theme.Accent;
                 var sess = snap.Sessions.FirstOrDefault(x => x.Exe == exe);
                 if (sess is not null) s.SetValueExternal(sess.Volume);
             }
@@ -477,8 +484,6 @@ public class MixerForm : Form
     {
         foreach (var (id, card) in _cards)
         {
-            var def = _settings.Channels.FirstOrDefault(c => c.Id == id);
-            card.SetDeviceLabel(def?.DeviceId is null ? null : DeviceName(def.DeviceId));
             var owned = snap.Sessions.Where(s => s.ChannelId == id).ToList();
             card.Update(owned, _hotkeyError);
         }
@@ -594,19 +599,20 @@ public class MixerForm : Form
         lock (_settings) _routing.ApplyVolumes(_settings.Channels.ToList());
     }
 
-    /// <summary>First run with VAC present: map channels to Lines in order (Game→Line 1, …).</summary>
-    private void SetupDefaultMappingIfNeeded()
+    /// <summary>Channels bind to devices BY NAME: "Game" → endpoint starting with "SONO - Game".
+    /// Survives driver reinstalls/re-enumeration, and renaming a channel re-binds it automatically.</summary>
+    private void ResolveDeviceMappings()
     {
-        if (_settings.Channels.Any(c => c.DeviceId is not null)) return;
-        var lines = new MMDeviceEnumerator().EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
-            .Where(d => d.FriendlyName.Contains("Virtual Audio Cable", StringComparison.OrdinalIgnoreCase))
-            .OrderBy(d => d.FriendlyName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        if (lines.Count == 0) return;
-        var groups = _settings.Channels.ToList();
-        for (int i = 0; i < groups.Count && i < lines.Count; i++)
-            groups[i].DeviceId = lines[i].ID;
-        Save();
+        var renders = new MMDeviceEnumerator().EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToList();
+        bool dirty = false;
+        lock (_settings)
+            foreach (var ch in _settings.Channels)
+            {
+                var want = "SONO - " + ch.Name;
+                var match = renders.FirstOrDefault(d => d.FriendlyName.StartsWith(want, StringComparison.OrdinalIgnoreCase));
+                if (match is not null && ch.DeviceId != match.ID) { ch.DeviceId = match.ID; dirty = true; }
+            }
+        if (dirty) Save();
     }
 
     private void RememberKnownApps(EngineSnapshot snap)

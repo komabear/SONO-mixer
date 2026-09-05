@@ -18,6 +18,8 @@ internal static class Theme
     public static readonly Color Field = Color.FromArgb(44, 48, 70);         // filled text fields
     public static readonly Color FieldFocus = Color.FromArgb(56, 61, 88);    // focused text field
 
+    public static Color FromHex(string hex) => ColorTranslator.FromHtml(hex);
+
     public static readonly string[] Palette =
     {
         "#7aa2f7", "#9ece6a", "#bb9af7", "#e0af68", "#f7768e", "#7dcfff", "#c0caf5", "#ff9e64",

@@ -21,7 +21,6 @@ public class ChannelCard : Control
     private readonly FlowLayoutPanel _apps;
     private readonly Label _name;
     private readonly Label _db;
-    private readonly Label _deviceChip;
     private readonly Button _mute;
     private readonly Button _gear;
     private readonly SliderBar _slider;
@@ -37,7 +36,6 @@ public class ChannelCard : Control
     public event Action<string, HotkeySlot, string?>? HotkeySet;
     public event Action<string>? DefinitionEdited;
     public event Action<string>? AddAppRequested;
-    public event Action<string>? DevicePickRequested;
     public event Action<string>? MakeDefaultRequested;
 
     public ChannelCard(ChannelDefinition def)
@@ -49,12 +47,10 @@ public class ChannelCard : Control
         Padding = new Padding(12);
         var accent = ColorOf(def);
 
-        // ---- header: name | device chip | gear ----
-        // chip column is percentage-based (NOT AutoSize) so a long device name can never
-        // squeeze the channel name to zero width; both ellipsize gracefully.
-        var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = HeaderH, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 1 };
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
+        // ---- header: name | gear ----
+        // device mapping is implicit by name (Game → "SONO - Game"), so no chip/picker here
+        var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = HeaderH, BackColor = Color.Transparent, ColumnCount = 2, RowCount = 1 };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 36));
 
         _name = new Label
@@ -62,27 +58,12 @@ public class ChannelCard : Control
             Text = def.Name,
             AutoEllipsis = true,
             Dock = DockStyle.Fill,
-            Font = new Font("Segoe UI", 13f, FontStyle.Bold),
+            Font = new Font("Segoe UI", 14f, FontStyle.Bold),
             ForeColor = Theme.Text,
             BackColor = Color.Transparent,
             TextAlign = ContentAlignment.MiddleLeft,
         };
         header.Controls.Add(_name, 0, 0);
-
-        _deviceChip = new Label
-        {
-            Text = def.DeviceId is null ? "no device" : "device",
-            Dock = DockStyle.Fill,
-            AutoEllipsis = true,
-            ForeColor = Theme.Muted,
-            BackColor = Theme.Chip,
-            Padding = new Padding(6, 4, 6, 4),
-            Cursor = Cursors.Hand,
-            TextAlign = ContentAlignment.MiddleRight,
-            Margin = new Padding(0, 8, 8, 8),
-        };
-        _deviceChip.Click += (_, _) => DevicePickRequested?.Invoke(ChannelId);
-        header.Controls.Add(_deviceChip, 1, 0);
 
         _gear = new Button
         {
@@ -235,15 +216,6 @@ public class ChannelCard : Control
         UpdateDeviceChip();
     }
 
-    private string? _deviceLabel;
-    public void SetDeviceLabel(string? label) { _deviceLabel = label; UpdateDeviceChip(); }
-
-    private void UpdateDeviceChip()
-    {
-        _deviceChip.Text = _def.DeviceId is null ? "no device" : _deviceLabel ?? "device ✓";
-        _deviceChip.ForeColor = _def.DeviceId is null ? Theme.Muted : Theme.Accent;
-    }
-
     private static Color ColorOf(ChannelDefinition def) => ColorTranslator.FromHtml(def.ColorHex);
 
     /// <summary>Periodic refresh from the engine snapshot.</summary>
@@ -254,7 +226,6 @@ public class ChannelCard : Control
         UpdateDb();
         _name.Text = _def.Name;
         _slider.Fill = ColorOf(_def);
-        UpdateDeviceChip();
         Tips.SetToolTip(_gear, string.IsNullOrWhiteSpace(hotkeyError) ? "Channel settings" : "⚠ " + hotkeyError);
         DiffChips(owned);
     }
@@ -351,9 +322,7 @@ public class ChannelCard : Control
             }
             colorMenu.Show(Cursor.Position);
         });
-        menu.Items.Add("Output device…", null, (_, _) => DevicePickRequested?.Invoke(ChannelId));
-        if (_def.DeviceId is not null)
-            menu.Items.Add("Set device as Windows default", null, (_, _) => MakeDefaultRequested?.Invoke(ChannelId));
+        menu.Items.Add("Set device as Windows default", null, (_, _) => MakeDefaultRequested?.Invoke(ChannelId));
         menu.Show(_gear, new Point(0, _gear.Height));
     }
 }
