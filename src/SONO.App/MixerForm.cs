@@ -190,6 +190,18 @@ public class MixerForm : Form
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             Padding = new Padding(6),
         };
+        // keep the reserved mascot strip visible at ANY window height: clamp the list bottom
+        // on every layout pass (anchors would otherwise stretch it over the strip)
+        if (_mascot is not null)
+        {
+            void ClampList()
+            {
+                int maxBottom = right.Height - 36 - 130 - 4;   // status line + mascot strip
+                if (_appList.Bottom > maxBottom) _appList.Height = maxBottom - _appList.Top;
+            }
+            right.Resize += (_, _) => ClampList();
+            _appList.Resize += (_, _) => ClampList();
+        }
 
         _status = new Label
         {
