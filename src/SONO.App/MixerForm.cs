@@ -169,6 +169,16 @@ public class MixerForm : Form
             if (_routing.RealOutputId != _settings.RealOutputId) { _settings.RealOutputId = _routing.RealOutputId; Save(); }
         };
 
+        // load theme mascot (e.g. Miku) early: its presence insets the app list so a visible
+        // parent strip exists at the bottom for the owner-drawn image
+        _mascot = null;
+        if (Theme.Current.ImagePath is string mimg)
+        {
+            var mfull = Path.Combine(AppContext.BaseDirectory, mimg);
+            if (File.Exists(mfull)) _mascot = Image.FromFile(mfull);
+        }
+        int mascotInset = _mascot is null ? 0 : 158;
+
         _appList = new BufferedFlow
         {
             FlowDirection = FlowDirection.TopDown,
@@ -176,7 +186,7 @@ public class MixerForm : Form
             AutoScroll = true,
             BackColor = Theme.CardInner,
             Location = new Point(10, 106),
-            Size = new Size(292, 490),
+            Size = new Size(292, 490 - mascotInset),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             Padding = new Padding(6),
         };
@@ -197,25 +207,19 @@ public class MixerForm : Form
         right.Controls.Add(_appList);
         right.Controls.Add(_status);
 
-        // theme mascot (e.g. Miku): owner-drawn in the panel's Paint event → renders behind
-        // every child control, real per-pixel alpha (no WinForms fake-transparency issues),
-        // bottom-center, always above the status line.
-        if (Theme.Current.ImagePath is string img)
+        // theme mascot: owner-drawn in the reserved strip between the app list and the status
+        // line → behind children is impossible there (no children), real alpha, bottom-center.
+        if (_mascot is not null)
         {
-            var full = Path.Combine(AppContext.BaseDirectory, img);
-            if (File.Exists(full))
+            right.Paint += (_, e) =>
             {
-                _mascot = Image.FromFile(full);
-                right.Paint += (_, e) =>
-                {
-                    if (_mascot is null) return;
-                    int w = 150, h = (int)(150f * _mascot.Height / _mascot.Width);
-                    int x = (right.Width - w) / 2;
-                    int y = right.Height - h - 42;   // sits on the status line
-                    e.Graphics.DrawImage(_mascot, x, y, w, h);
-                };
-                right.Resize += (_, _) => right.Invalidate();
-            }
+                if (_mascot is null) return;
+                int w = 130, h = (int)(130f * _mascot.Height / _mascot.Width);
+                int x = (right.Width - w) / 2;
+                int y = right.Height - 34 - h - 2;   // above the status line
+                e.Graphics.DrawImage(_mascot, x, y, w, h);
+            };
+            right.Resize += (_, _) => right.Invalidate();
         }
         Controls.Add(right);
         _table.BringToFront();   // Fill control must be laid out LAST so the Right panel reserves its strip
