@@ -77,70 +77,22 @@ public sealed class AudioEngine : IDisposable
                     .GroupBy(x => x.exe)
                     .ToDictionary(g => g.Key, g => g.First().ch);
 
-                var col = _render.AudioSessionManager.Sessions;
+                // enumerate sessions on ALL active render devices (an app mid-misroute, or on
+                // a cable, is exactly the app the user needs to see in the Applications list)
                 var seen = new HashSet<string>();
-                for (int i = 0; i < col.Count; i++)
+                foreach (var dev in _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
                 {
-                    AudioSessionControl asc;
-                    string stateStr;
-                    uint pid;
-                    string key;
-                    try
+                    AudioSessionManager? mgr;
+                    try { mgr = dev.AudioSessionManager; } catch { continue; }
+                    var sessions2 = mgr.Sessions;
+                    for (int i = 0; i < sessions2.Count; i++)
                     {
-                        asc = col[i];
-                        stateStr = asc.State.ToString();
-                        if (stateStr.Contains("Expired")) continue;
-                        pid = asc.GetProcessID;
-                        key = SessionKey(pid, asc);
-                    }
-                    catch { continue; } // session died between enumeration and read
-
-                    seen.Add(key);
-                    var (exe, title) = Identify(pid);
-                    if (exe.Length == 0) exe = "unknown";
-
-                    string? channelId = null;
-                    ChannelDefinition? owner = byExe.TryGetValue(exe, out var found) ? found : null;
-                    if (owner is not null) channelId = owner.Id;
-
-                    if (owner is not null)
-                    {
-                        var target = (Vol: owner.Volume, Mute: owner.Muted);
                         try
                         {
-                            var vol = asc.SimpleAudioVolume;
-                            if (Math.Abs(vol.Volume - target.Vol) > 0.001f) vol.Volume = target.Vol;
-                            if (vol.Mute != target.Mute) vol.Mute = target.Mute;
+                            CollectSession(sessions2[i], dev.FriendlyName, byExe, sessions, seen);
                         }
                         catch { }
-                        _touched[key] = target;
                     }
-                    else
-                    {
-                        if (_touched.Remove(key))
-                        {
-                            // ownership lost but session still alive → give the app its independence back
-                            try { asc.SimpleAudioVolume.Volume = 1f; asc.SimpleAudioVolume.Mute = false; } catch { }
-                        }
-                        if (_independent.TryGetValue(exe, out var ind))
-                        {
-                            try
-                            {
-                                if (ind.Vol is float iv && Math.Abs(asc.SimpleAudioVolume.Volume - iv) > 0.001f)
-                                    asc.SimpleAudioVolume.Volume = iv;
-                                if (ind.Mute is bool im && asc.SimpleAudioVolume.Mute != im)
-                                    asc.SimpleAudioVolume.Mute = im;
-                            }
-                            catch { }
-                        }
-                    }
-
-                    float curVol = 1f; bool curMute = false;
-                    try { curVol = asc.SimpleAudioVolume.Volume; curMute = asc.SimpleAudioVolume.Mute; } catch { }
-
-                    sessions.Add(new SessionView(
-                        key, exe, PrettyName(asc, pid, exe, title), pid, pid == 0,
-                        stateStr.Replace("AudioSessionState", ""), channelId, curVol, curMute));
                 }
 
                 // forget touched entries whose session died (nothing left to restore)
@@ -157,6 +109,71 @@ public sealed class AudioEngine : IDisposable
                 return new EngineSnapshot(sessions, outputName, error);
             }
         }
+    }
+
+    private void CollectSession(
+        AudioSessionControl asc, string deviceName,
+        Dictionary<string, ChannelDefinition> byExe,
+        List<SessionView> sessions, HashSet<string> seen)
+    {
+        string stateStr;
+        uint pid;
+        string key;
+        try
+        {
+            stateStr = asc.State.ToString();
+            if (stateStr.Contains("Expired")) return;
+            pid = asc.GetProcessID;
+            key = SessionKey(pid, asc);
+        }
+        catch { return; } // session died between enumeration and read
+
+        if (!seen.Add(key)) return;   // already listed from another device
+        var (exe, title) = Identify(pid);
+        if (exe.Length == 0) exe = "unknown";
+
+        string? channelId = null;
+        ChannelDefinition? owner = byExe.TryGetValue(exe, out var found) ? found : null;
+        if (owner is not null) channelId = owner.Id;
+
+        if (owner is not null)
+        {
+            var target = (Vol: owner.Volume, Mute: owner.Muted);
+            try
+            {
+                var vol = asc.SimpleAudioVolume;
+                if (Math.Abs(vol.Volume - target.Vol) > 0.001f) vol.Volume = target.Vol;
+                if (vol.Mute != target.Mute) vol.Mute = target.Mute;
+            }
+            catch { }
+            _touched[key] = target;
+        }
+        else
+        {
+            if (_touched.Remove(key))
+            {
+                // ownership lost but session still alive → give the app its independence back
+                try { asc.SimpleAudioVolume.Volume = 1f; asc.SimpleAudioVolume.Mute = false; } catch { }
+            }
+            if (_independent.TryGetValue(exe, out var ind))
+            {
+                try
+                {
+                    if (ind.Vol is float iv && Math.Abs(asc.SimpleAudioVolume.Volume - iv) > 0.001f)
+                        asc.SimpleAudioVolume.Volume = iv;
+                    if (ind.Mute is bool im && asc.SimpleAudioVolume.Mute != im)
+                        asc.SimpleAudioVolume.Mute = im;
+                }
+                catch { }
+            }
+        }
+
+        float curVol = 1f; bool curMute = false;
+        try { curVol = asc.SimpleAudioVolume.Volume; curMute = asc.SimpleAudioVolume.Mute; } catch { }
+
+        sessions.Add(new SessionView(
+            key, exe, PrettyName(asc, pid, exe, title), pid, pid == 0,
+            stateStr.Replace("AudioSessionState", ""), channelId, curVol, curMute));
     }
 
     private static string SessionKey(uint pid, AudioSessionControl asc)
