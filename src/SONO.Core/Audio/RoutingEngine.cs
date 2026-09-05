@@ -57,9 +57,14 @@ public sealed class RoutingEngine : IDisposable
                 var en = new MMDeviceEnumerator();
 
                 // real output: explicit choice → current default → best non-cable device
+                // the Windows default is ONLY valid if it isn't one of our own cables (feedback loop)
                 var mappedIds = mapped.Select(c => c.DeviceId).ToHashSet();
+                string defaultId = "";
+                try { defaultId = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console).ID; } catch { }
+                if (mappedIds.Contains(defaultId)) defaultId = "";
+
                 var outDevice = TryDevice(en, preferredRealOutputId is string p && !mappedIds.Contains(p) ? p : null)
-                                ?? TryDevice(en, en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console).ID)
+                                ?? TryDevice(en, defaultId)
                                 ?? en.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
                                       .FirstOrDefault(d => !mappedIds.Contains(d.ID));
                 if (outDevice is null) { Error = "no output device available"; return; }
@@ -115,10 +120,13 @@ public sealed class RoutingEngine : IDisposable
                 foreach (var s in _streams.Values) s.Capture.StartRecording();
                 _running = true;
                 Error = null;
+                SONO.Core.Diagnostics.Log.Write(
+                    $"Routing rebuilt: output='{outDevice.FriendlyName}' streams=[{string.Join(", ", _streams.Values.Select(v => v.Device?.FriendlyName))}]");
             }
             catch (Exception ex)
             {
                 Error = ex.Message;
+                SONO.Core.Diagnostics.Log.Write($"RoutingEngine rebuild failed: {ex}");
                 TeardownLocked();
             }
         }

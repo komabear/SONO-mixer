@@ -18,6 +18,9 @@ public class MixerForm : Form
     private readonly ToolStripMenuItem _miAutostart, _miMinimized;
     private readonly Label _status;
     private readonly TableLayoutPanel _table;
+    private readonly ComboBox _outputPick = new();
+    private readonly List<string> _outputIds = new();
+    private bool _suppressPick;
     private readonly FlowLayoutPanel _appList;
     private bool _allowClose;
     private bool _balloonShown;
@@ -116,14 +119,44 @@ public class MixerForm : Form
         settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep });
         settingsBtn.Click += (_, _) => settingsMenu.Show(settingsBtn, new Point(0, settingsBtn.Height));
 
+        // ---- output picker: where the mixed channels come out ----
+        var outCaption = new Label
+        {
+            Text = "OUTPUT  (mixed channels play here)",
+            ForeColor = Theme.Muted,
+            Location = new Point(12, 52),
+            Size = new Size(288, 16),
+            Font = new Font("Segoe UI", 7f, FontStyle.Bold),
+        };
+        _outputPick = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Chip,
+            ForeColor = Theme.Text,
+            Location = new Point(10, 70),
+            Size = new Size(292, 28),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            Font = new Font("Segoe UI", 10f),
+        };
+        _outputPick.DropDown += (_, _) => PopulateOutputPicker();
+        _outputPick.SelectedIndexChanged += (_, _) =>
+        {
+            if (_suppressPick || _outputPick.SelectedIndex < 0 || _outputPick.SelectedIndex >= _outputIds.Count) return;
+            _settings.RealOutputId = _outputIds[_outputPick.SelectedIndex];
+            Save();
+            _routing.Rebuild(_settings.RealOutputId);
+            if (_routing.RealOutputId != _settings.RealOutputId) { _settings.RealOutputId = _routing.RealOutputId; Save(); }
+        };
+
         _appList = new BufferedFlow
         {
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             AutoScroll = true,
             BackColor = Theme.CardInner,
-            Location = new Point(10, 56),
-            Size = new Size(292, 540),
+            Location = new Point(10, 106),
+            Size = new Size(292, 490),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             Padding = new Padding(6),
         };
@@ -139,6 +172,8 @@ public class MixerForm : Form
         right.Controls.Add(rightHead);
         right.Controls.Add(rightSub);
         right.Controls.Add(settingsBtn);
+        right.Controls.Add(outCaption);
+        right.Controls.Add(_outputPick);
         right.Controls.Add(_appList);
         right.Controls.Add(_status);
         Controls.Add(right);
@@ -181,6 +216,7 @@ public class MixerForm : Form
             if (_settings.RealOutputId is string ro && _settings.Channels.Any(c => c.DeviceId == ro))
             { _settings.RealOutputId = null; Save(); }
             SetupDefaultMappingIfNeeded();
+            PopulateOutputPicker();
             _routing.Rebuild(_settings.RealOutputId);
             if (_routing.RealOutputId != _settings.RealOutputId)
             {
@@ -461,6 +497,32 @@ public class MixerForm : Form
             return d.FriendlyName;
         }
         catch { return "?"; }
+    }
+
+    /// <summary>Fill the output dropdown with all render devices except the virtual cables (feedback loop).</summary>
+    private void PopulateOutputPicker()
+    {
+        _suppressPick = true;
+        try
+        {
+            var en = new MMDeviceEnumerator();
+            var devices = en.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
+                .Where(d => !d.FriendlyName.Contains("Virtual Audio Cable", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            string defaultId = "";
+            try { defaultId = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console).ID; } catch { }
+
+            _outputPick.Items.Clear();
+            _outputIds.Clear();
+            foreach (var d in devices)
+            {
+                _outputPick.Items.Add(d.ID == defaultId ? d.FriendlyName + "   (Windows default)" : d.FriendlyName);
+                _outputIds.Add(d.ID);
+            }
+            string wanted = _settings.RealOutputId is string r && _outputIds.Contains(r) ? r : defaultId;
+            _outputPick.SelectedIndex = _outputIds.IndexOf(wanted);
+        }
+        finally { _suppressPick = false; }
     }
 
     private void ShowDevicePicker(string channelId)

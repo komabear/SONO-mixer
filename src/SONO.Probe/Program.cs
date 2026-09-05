@@ -1,13 +1,70 @@
 ﻿using NAudio.CoreAudioApi;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 
-// Device inventory: all active render + capture endpoints.
+// Modes:
+//   (no args)                  → device inventory
+//   setdefault <id>            → set default render endpoint
+//   tone <id> <seconds>        → play a 440 Hz tone into a render endpoint
+//   meter <id> <seconds>       → peak level of a render endpoint via loopback capture
 var en = new MMDeviceEnumerator();
+
+if (args.Contains("inspect"))
+{
+    foreach (var m in typeof(ISampleProvider).GetMethods())
+        Console.WriteLine("ISampleProvider: " + m);
+    return;
+}
 
 if (args.Length == 2 && args[0] == "setdefault")
 {
     SONO.Core.Audio.PolicyConfigApi.SetDefaultDevice(args[1]);
-    var d = en.GetDevice(args[1]);
-    Console.WriteLine($"Default render set to: {d.FriendlyName}");
+    Console.WriteLine($"Default render set to: {en.GetDevice(args[1]).FriendlyName}");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "tone")
+{
+    var dev = en.GetDevice(args[1]);
+    using var outStream = new WasapiOut(dev, AudioClientShareMode.Shared, false, 60);
+    outStream.Init(new SampleToWaveProvider(new Sine48k()));
+    outStream.Play();
+    Console.WriteLine($"tone → {dev.FriendlyName}");
+    await Task.Delay(int.Parse(args[2]) * 1000);
+    Console.WriteLine("tone done");
+    return;
+}
+
+if (args.Length == 3 && args[0] == "meter")
+{
+    var dev = en.GetDevice(args[1]);
+    float max = 0;
+    using var cap = new WasapiLoopbackCapture(dev);
+    cap.DataAvailable += (_, e) =>
+    {
+        int bytesPerSample = cap.WaveFormat.BitsPerSample / 8;
+        int frames = e.BytesRecorded / bytesPerSample;
+        if (cap.WaveFormat.Encoding == WaveFormatEncoding.IeeeFloat)
+        {
+            for (int i = 0; i < frames; i++)
+            {
+                float v = MathF.Abs(BitConverter.ToSingle(e.Buffer, i * 4));
+                if (v > max) max = v;
+            }
+        }
+        else // 16-bit PCM
+        {
+            for (int i = 0; i < frames; i++)
+            {
+                float v = MathF.Abs(Math.Abs((float)BitConverter.ToInt16(e.Buffer, i * 2)) / 32768f);
+                if (v > max) max = v;
+            }
+        }
+    };
+    cap.StartRecording();
+    await Task.Delay(int.Parse(args[2]) * 1000);
+    cap.StopRecording();
+    Console.WriteLine($"{dev.FriendlyName}: peak={max:0.000}");
     return;
 }
 
@@ -21,6 +78,19 @@ foreach (var d in en.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Activ
 
 var def = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
 Console.WriteLine($"== Default render: {def.FriendlyName}");
-
 var col = def.AudioSessionManager.Sessions;
 Console.WriteLine($"== Sessions on default device: {col.Count}");
+
+/// <summary>Minimal 440 Hz stereo sine at 48 kHz.</summary>
+file class Sine48k : ISampleProvider
+{
+    private long _n;
+    public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(48000, 2);
+    public int Read(Span<float> buffer)
+    {
+        for (int i = 0; i < buffer.Length; i++)
+            buffer[i] = 0.4f * MathF.Sin(2 * MathF.PI * 440 * (_n + i / 2) / 48000);
+        _n += buffer.Length / 2;
+        return buffer.Length;
+    }
+}

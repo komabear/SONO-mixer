@@ -7,6 +7,13 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
+        // survive UI/background-thread exceptions: log them, keep the mixer alive
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) =>
+            SONO.Core.Diagnostics.Log.Write($"UI thread exception: {e.Exception}");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            SONO.Core.Diagnostics.Log.Write($"FATAL unhandled: {e.ExceptionObject}");
+
         bool autostartRequested = args.Contains("--autostart", StringComparer.OrdinalIgnoreCase)
                                   || args.Contains("/autostart", StringComparer.OrdinalIgnoreCase);
         using var mutex = new Mutex(true, @"Local\SONO.SingleInstance", out bool firstInstance);
