@@ -69,6 +69,16 @@ public class HotkeyCaptureBox : Control
         Focus();
     }
 
+    /// <summary>Drop focus after committing so the field visually "unselects" itself.</summary>
+    private void ReleaseFocus()
+    {
+        Capturing = false;
+        var parent = Parent;
+        while (parent is not null && !parent.CanFocus) parent = parent.Parent;
+        parent?.Focus();
+        Invalidate();
+    }
+
     protected override void OnPreviewKeyDown(PreviewKeyDownEventArgs e)
     {
         // keep arrow/tab keys for capture instead of focus navigation
@@ -82,7 +92,7 @@ public class HotkeyCaptureBox : Control
         if (!Capturing) return;
         e.Handled = true;
 
-        if (e.KeyCode == Keys.Escape) { SetHotkey(null); return; }
+        if (e.KeyCode == Keys.Escape) { SetHotkey(null); ReleaseFocus(); return; }
 
         var key = e.KeyCode;
         if (ModifierNames.Contains(key.ToString())) return;   // wait for a non-modifier
@@ -95,6 +105,7 @@ public class HotkeyCaptureBox : Control
         if (parts.Count == 0 && !MediaKeys.Contains(key)) return;   // bare key: only media allowed
         parts.Add(FormatKey(key));
         SetHotkey(string.Join("+", parts));
+        ReleaseFocus();   // commit + deselect in one gesture
     }
 
     protected override void OnKeyPress(KeyPressEventArgs e) { e.Handled = true; }   // no beep

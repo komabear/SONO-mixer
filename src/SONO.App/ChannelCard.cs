@@ -164,11 +164,16 @@ public class ChannelCard : Control
             {
                 _def.SetHotkey(slotCaptured, text);
                 box.Tag = text;
-                box.Text = text ?? "(none)";
+                box.HotkeyText = text ?? "(none)";   // owner-drawn control: update + repaint
                 HotkeySet?.Invoke(ChannelId, slotCaptured, text);
             }
             box.Committed += ApplyHotkey;
-            clear.Click += (_, _) => ApplyHotkey(null);
+            clear.Click += (_, _) =>
+            {
+                clear.Focus();              // take focus so the capture box exits capture mode
+                ApplyHotkey(null);
+                box.Parent?.Focus();        // hand focus back to the pill container
+            };
             Tips.SetToolTip(clear, "Clear this shortcut");
             hotkeys.Controls.Add(lbl, 0, y);
             field.Controls.Add(box);
