@@ -13,6 +13,34 @@ if (args.Contains("inspect"))
 {
     foreach (var m in typeof(ISampleProvider).GetMethods())
         Console.WriteLine("ISampleProvider: " + m);
+    Console.WriteLine("=== builder/loopback types ===");
+    var asm = typeof(MMDeviceEnumerator).Assembly;
+    foreach (var t in asm.GetExportedTypes().Where(t => t.Name.Contains("Recorder") || t.Name.Contains("Player") || t.Name.Contains("Loopback")).OrderBy(t => t.FullName))
+    {
+        Console.WriteLine($"-- {t.FullName}");
+        foreach (var m in t.GetMembers().Where(m => m.MemberType is System.Reflection.MemberTypes.Method or System.Reflection.MemberTypes.Property))
+        {
+            var s = m.ToString();
+            if (m.Name.StartsWith("get_") || m.Name.StartsWith("set_") || m.Name.StartsWith("add_") || m.Name.StartsWith("remove_")) continue;
+            if (s!.StartsWith("System." + m.Name) || s.Contains(" " + m.Name + "("))
+                Console.WriteLine("     " + s);
+        }
+    }
+    Console.WriteLine("=== ProcessLoopbackMode values (reflection) ===");
+    var wasapiAsm = typeof(NAudio.Wave.WasapiRecorder).Assembly;
+    var plm = wasapiAsm.GetType("NAudio.CoreAudioApi.ProcessLoopbackMode");
+    if (plm is not null)
+        foreach (var v in Enum.GetValues(plm))
+            Console.WriteLine($"  {v} = {(int)v}");
+    Console.WriteLine("=== CaptureDataAvailableHandler signature ===");
+    var h = typeof(NAudio.Wave.CaptureDataAvailableHandler).GetMethod("Invoke");
+    Console.WriteLine("  " + h);
+    Console.WriteLine("=== WasapiRecorder WaveFormat property? ===");
+    foreach (var p in typeof(NAudio.Wave.WasapiRecorder).GetProperties())
+        Console.WriteLine($"  {p.PropertyType} {p.Name}");
+    Console.WriteLine("=== WasapiRecorderBuilder ctor ===");
+    foreach (var c in typeof(NAudio.Wave.WasapiRecorderBuilder).GetConstructors())
+        Console.WriteLine("  " + c);
     return;
 }
 

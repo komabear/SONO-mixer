@@ -10,7 +10,7 @@ public class MixerForm : Form
     private readonly AudioEngine _engine;
     private readonly HotkeyManager _hotkeys;
     private readonly AppSettings _settings;
-    private readonly RoutingEngine _routing = new();
+    private readonly AppRoutingEngine _appRouting = new();
     private readonly NotifyIcon _tray;
     private readonly System.Windows.Forms.Timer _reconcileDebounce;
     private readonly Dictionary<string, ChannelCard> _cards = new();
@@ -273,20 +273,21 @@ public class MixerForm : Form
             BuildCards();
             ReflowGrid();
             IReadOnlyList<ChannelDefinition> Snapshot() { lock (_settings) return _settings.Channels.ToList(); }
-            _engine.SetChannelSource(Snapshot);
+            _engine.SetChannelSource(null);   // enumeration only — capture engine owns volumes now
             _engine.Start(600);
-            _routing.SetChannelSource(Snapshot);
+            _appRouting.SetChannelSource(Snapshot);
+            _appRouting.Start();
             RebindHotkeys();
             // sanitize: real output must never be one of the channel cables (feedback loop)
             if (_settings.RealOutputId is string ro && _settings.Channels.Any(c => c.DeviceId == ro))
             { _settings.RealOutputId = null; Save(); }
             ResolveDeviceMappings();
             UpdateOutputButtonLabel();
-            _routing.Rebuild(_settings.RealOutputId);
-            if (_routing.RealOutputId != _settings.RealOutputId)
+            _appRouting.Rebuild(_settings.RealOutputId);
+            if (_appRouting.OutputDeviceName is not null && _settings.RealOutputId is null)
             {
-                _settings.RealOutputId = _routing.RealOutputId;
-                Save();
+                // adopt the engine's chosen output id for persistence
+                _settings.RealOutputId = null;
             }
             if (_launchedAtBoot && _settings.StartMinimized) HideToTray(showBalloon: true);
         };
@@ -552,10 +553,10 @@ public class MixerForm : Form
                 : $"▶ {snap.OutputDevice}{RoutingSuffix()}";
     }
 
-    private string RoutingSuffix() => _routing.Error is not null
-        ? $"  |  ⚠ routing: {_routing.Error}"
-        : _routing.ActiveStreams > 0
-            ? $"  |  routing {_routing.ActiveStreams} ch"
+    private string RoutingSuffix() => _appRouting.Error is not null
+        ? $"  |  ⚠ routing: {_appRouting.Error}"
+        : _appRouting.ActiveStreams > 0
+            ? $"  |  routing {_appRouting.ActiveStreams} app(s)"
             : "";
 
     private void UpdateCards(EngineSnapshot snap)
@@ -629,9 +630,8 @@ public class MixerForm : Form
             {
                 _settings.RealOutputId = captured;
                 Save();
-                _routing.Rebuild(_settings.RealOutputId);
-                if (_routing.RealOutputId != _settings.RealOutputId) { _settings.RealOutputId = _routing.RealOutputId; Save(); }
-                UpdateOutputButtonLabel(captured);
+                _appRouting.Rebuild(_settings.RealOutputId);
+                UpdateOutputButtonLabel(_appRouting.OutputDeviceName is not null ? captured : null);
             };
             _outputMenu.Items.Add(item);
         }
@@ -653,7 +653,7 @@ public class MixerForm : Form
 
     private void RefreshRoutingVolumes()
     {
-        lock (_settings) _routing.ApplyVolumes(_settings.Channels.ToList());
+        lock (_settings) _appRouting.ApplyVolumes(_settings.Channels.ToList());
     }
 
     /// <summary>Channels bind to devices BY NAME: "Game" → endpoint starting with "SONO - Game".
@@ -767,7 +767,7 @@ public class MixerForm : Form
         _tray.Visible = false;
         _tray.Dispose();
         _reconcileDebounce.Dispose();
-        if (!SuppressCleanup) _routing.Dispose();   // theme swap keeps routing alive
+        if (!SuppressCleanup) _appRouting.Dispose();   // theme swap keeps routing alive
         base.OnFormClosed(e);
     }
 }
