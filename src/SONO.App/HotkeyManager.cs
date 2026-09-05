@@ -38,7 +38,11 @@ public sealed class HotkeyManager : IDisposable
 
     public HotkeyManager() => _window.OnHotkey += id =>
     {
-        if (_bindings.TryGetValue(id, out var b)) Pressed?.Invoke(b.ChannelId, b.Slot);
+        if (_bindings.TryGetValue(id, out var b))
+        {
+            SONO.Core.Diagnostics.Log.Write($"hotkey fired: {b.ChannelId}/{b.Slot}");
+            Pressed?.Invoke(b.ChannelId, b.Slot);
+        }
     };
 
     private readonly Dictionary<int, (string ChannelId, HotkeySlot Slot)> _bindings = new();
@@ -61,8 +65,13 @@ public sealed class HotkeyManager : IDisposable
             {
                 _registered[id] = (mods, vk);
                 _bindings[id] = (channelId, slot);
+                SONO.Core.Diagnostics.Log.Write($"hotkey registered: '{text}' -> {channelId}/{slot}");
             }
-            else errors.Add($"'{text}' is taken by another program");
+            else
+            {
+                errors.Add($"'{text}' is taken by another program");
+                SONO.Core.Diagnostics.Log.Write($"hotkey FAILED: '{text}' (RegisterHotKey error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()})");
+            }
         }
         return errors;
     }
@@ -88,8 +97,10 @@ public sealed class HotkeyManager : IDisposable
                     break;
             }
         }
-        if (key is null || seen == 0) { error = "need at least one modifier (Ctrl/Alt/Shift/Win) + a key"; return false; }
+        if (key is null) { error = "no key pressed"; return false; }
         if (!TryParseKey(key, out vk)) { error = $"unknown key '{key}'"; return false; }
+        // multimedia keys are the exception: they may be bound bare, everything else needs a modifier
+        if (seen == 0 && !IsMediaVk(vk)) { error = "need at least one modifier (Ctrl/Alt/Shift/Win) — media keys may be bare"; return false; }
         mods = seen;
         return true;
     }
@@ -108,10 +119,17 @@ public sealed class HotkeyManager : IDisposable
             "insert" => 0x2D, "delete" => 0x2E, "home" => 0x24, "end" => 0x23, "pageup" => 0x21, "pagedown" => 0x22,
             "up" => 0x26, "down" => 0x28, "left" => 0x25, "right" => 0x27,
             "oemplus" or "+" => 0xBB, "oemminus" or "-" => 0xBD,
+            // multimedia / consumer keys — legal bare (no modifier)
+            "volumeup" => 0xAF, "volumedown" => 0xAE, "volumemute" => 0xAD,
+            "medianext" => 0xB0, "mediaprev" or "mediaprevious" => 0xB1,
+            "mediastop" => 0xB2, "mediaplay" or "mediaplaypause" => 0xB3,
             _ => 0,
         };
         return vk != 0;
     }
+
+    /// <summary>Consumer-control keys that may be registered without any modifier.</summary>
+    private static bool IsMediaVk(uint vk) => vk is >= 0xAD and <= 0xB3;
 
     public void Dispose()
     {

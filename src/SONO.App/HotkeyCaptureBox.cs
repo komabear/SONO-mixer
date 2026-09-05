@@ -37,6 +37,23 @@ public class HotkeyCaptureBox : TextBox
         Text = Tag as string ?? "";
     }
 
+    private static readonly HashSet<Keys> MediaKeys = new()
+    {
+        Keys.VolumeUp, Keys.VolumeDown, Keys.VolumeMute,
+        Keys.MediaNextTrack, Keys.MediaPreviousTrack, Keys.MediaStop, Keys.MediaPlayPause,
+    };
+
+    private static readonly Dictionary<Keys, string> MediaNames = new()
+    {
+        [Keys.VolumeUp] = "VolumeUp",
+        [Keys.VolumeDown] = "VolumeDown",
+        [Keys.VolumeMute] = "VolumeMute",
+        [Keys.MediaNextTrack] = "MediaNext",
+        [Keys.MediaPreviousTrack] = "MediaPrev",
+        [Keys.MediaStop] = "MediaStop",
+        [Keys.MediaPlayPause] = "MediaPlay",
+    };
+
     protected override void OnKeyDown(KeyEventArgs e)
     {
         e.SuppressKeyPress = true;
@@ -50,13 +67,15 @@ public class HotkeyCaptureBox : TextBox
         if (e.Alt) parts.Add("Alt");
         if (e.Shift) parts.Add("Shift");
         if (e.Modifiers.HasFlag(Keys.LWin) || e.Modifiers.HasFlag(Keys.RWin)) parts.Add("Win");
-        if (parts.Count == 0) return; // require a modifier
+        // media keys may be captured bare; other keys require a modifier
+        if (parts.Count == 0 && !MediaKeys.Contains(key)) return;
         parts.Add(FormatKey(key));
         Commit(string.Join("+", parts));
     }
 
     private static string FormatKey(Keys key)
     {
+        if (MediaNames.TryGetValue(key, out var mediaName)) return mediaName;
         var s = key.ToString();
         if (s.Length == 2 && s[0] == 'D' && char.IsDigit(s[1])) return s[1..]; // Keys.D1 → "1"
         if (s.Length == 1 && char.IsLetter(s[0])) return s.ToUpperInvariant();

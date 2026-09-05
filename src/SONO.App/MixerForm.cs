@@ -33,6 +33,7 @@ public class MixerForm : Form
         _hotkeys = hotkeys;
         _settings = settings;
         _launchedAtBoot = launchedAtBoot;
+        _hotkeys.Pressed += OnHotkey;
 
         Text = "SONO Mixer";
         StartPosition = FormStartPosition.CenterScreen;
