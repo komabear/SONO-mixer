@@ -62,6 +62,7 @@ public class ChannelCard : Control
             ForeColor = Theme.Text,
             BackColor = Color.Transparent,
             TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(8, 0, 0, 0),   // extra breathing room before the title
         };
         header.Controls.Add(_name, 0, 0);
 
@@ -95,11 +96,13 @@ public class ChannelCard : Control
         _gear.Click += (_, _) => ShowGearMenu();
         header.Controls.Add(_gear, 2, 0);
 
-        // ---- slim volume bar directly under the header ----
-        _slider = new SliderBar { Dock = DockStyle.Top, Height = VolRowH, Fill = accent, Margin = new Padding(0) };
+        // ---- slim volume bar directly under the header (padded wrapper: dock ignores Margin) ----
+        var volWrap = new Panel { Dock = DockStyle.Top, Height = VolRowH + 6, BackColor = Color.Transparent, Padding = new Padding(8, 3, 8, 3) };
+        _slider = new SliderBar { Dock = DockStyle.Fill, Fill = accent, Margin = new Padding(0) };
         _slider.ToolTip = "Channel volume (dB)";
         _slider.ValueChanged += v => { _def.Volume = v; VolumeLive?.Invoke(ChannelId, v); };
         _slider.EditCommitted += _ => VolumeCommitted?.Invoke(ChannelId);
+        volWrap.Controls.Add(_slider);
 
         // ---- hotkeys (bottom) — 3rd column is an explicit clear button ----
         var hotkeys = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = HotkeyRowH * 3 + 6, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 3 };
@@ -118,6 +121,20 @@ public class ChannelCard : Control
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Font = new Font("Segoe UI", 10f),
+                Padding = new Padding(6, 0, 0, 0),   // align labels with the title inset
+            };
+            // pill container supplies the inner horizontal padding (TextBox ignores Padding)
+            var field = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Theme.Field,
+                Padding = new Padding(14, 5, 14, 5),
+                Margin = new Padding(0, 2, 0, 2),
+            };
+            field.Resize += (_, _) =>
+            {
+                if (field.Width > 1 && field.Height > 1)
+                    field.Region = new Region(SliderBar.RoundRect(0, 0, field.Width, field.Height, field.Height / 2));
             };
             var box = new HotkeyCaptureBox
             {
@@ -126,7 +143,8 @@ public class ChannelCard : Control
                 Tag = def.GetHotkey(slot),
                 Text = def.GetHotkey(slot) ?? "(none)",
                 Font = new Font("Segoe UI", 10.5f),
-                Margin = new Padding(0, 2, 0, 2),
+                Margin = new Padding(0),
+                ClipPill = false,   // the container owns the pill shape
             };
             var clear = new Button
             {
@@ -151,7 +169,8 @@ public class ChannelCard : Control
             clear.Click += (_, _) => ApplyHotkey(null);
             Tips.SetToolTip(clear, "Clear this shortcut");
             hotkeys.Controls.Add(lbl, 0, y);
-            hotkeys.Controls.Add(box, 1, y);
+            field.Controls.Add(box);
+            hotkeys.Controls.Add(field, 1, y);
             hotkeys.Controls.Add(clear, 2, y);
             _hotkeyBoxes[slot] = box;
             y++;
@@ -192,7 +211,7 @@ public class ChannelCard : Control
         // header must be added LAST to be processed FIRST (top strip). Result top→bottom:
         // header (name/mute/gear) → slim volume bar → apps (fill) → hotkeys.
         Controls.Add(appsWrap);
-        Controls.Add(_slider);
+        Controls.Add(volWrap);
         Controls.Add(hotkeys);
         Controls.Add(header);
 

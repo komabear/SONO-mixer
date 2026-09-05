@@ -19,9 +19,14 @@ public class HotkeyCaptureBox : TextBox
         PlaceholderText = "click, then press keys";
     }
 
+    /// <summary>When false, the box skips its own pill clipping (a container owns the shape).</summary>
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool ClipPill { get; set; } = true;
+
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        if (!ClipPill) return;
         if (Width <= 1 || Height <= 1) return;
         Region = new Region(SliderBar.RoundRect(0, 0, Width, Height, Height / 2));  // pill-shaped field
     }
