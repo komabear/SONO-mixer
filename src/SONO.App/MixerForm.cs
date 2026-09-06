@@ -174,7 +174,9 @@ public class MixerForm : Form
         }
         var miSetup = new ToolStripMenuItem("Run automatic device setup…");
         miSetup.Click += (_, _) => RunDeviceSetupWizard();
-        settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep, miOsd, miTheme, miSetup });
+        var miAbout = new ToolStripMenuItem("About SONO Mixer");
+        miAbout.Click += (_, _) => new AboutDialog().ShowDialog(this);
+        settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep, miOsd, miTheme, miSetup, miAbout });
         settingsBtn.Click += (_, _) => settingsMenu.Show(settingsBtn, new Point(0, settingsBtn.Height));
 
         // ---- OUTPUT: field-styled button opening a fully themed dropdown (no native combo popup) ----
