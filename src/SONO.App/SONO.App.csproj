@@ -10,6 +10,7 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>..\..\assets_installer\sono.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

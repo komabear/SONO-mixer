@@ -77,30 +77,125 @@ public static class DeviceSetup
     }
 
     /// <summary>Elevated phase-1 script for a FRESH install: stage the driver from the user's
-    /// package (pnputil), set 4 cables, bounce. Endpoint renames happen in phase 2 once the
-    /// new endpoints exist (BuildScript).</summary>
+    /// package (pnputil), CREATE the root device node (staging alone doesn't — pnputil has no
+    /// "create device" verb; VAC's own installer uses the SetupAPI for this), set 4 cables,
+    /// bounce. Endpoint renames happen in phase 2 once the endpoints exist (BuildScript).</summary>
     public static string BuildDriverInstallScript(string infFullPath)
     {
-        return $@"$ErrorActionPreference = 'Continue'
-$log = Join-Path $env:LOCALAPPDATA 'Temp\sono_setup.log'
-'=== SONO driver install ===' | Out-File $log
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("$ErrorActionPreference = 'Continue'");
+        sb.AppendLine("$log = Join-Path $env:LOCALAPPDATA 'Temp\\sono_setup.log'");
+        sb.AppendLine("'=== SONO driver install ===' | Out-File $log");
 
-pnputil /add-driver ""{infFullPath}"" /install 2>&1 | Out-File $log -Append
+        sb.AppendLine($@"pnputil /add-driver ""{infFullPath}"" /install 2>&1 | Out-File $log -Append
 
 reg add ""HKLM\SOFTWARE\EuMus Design\Virtual Audio Cable\4"" /v ""Number of cables"" /t REG_DWORD /d 4 /f | Out-Null
 reg add ""HKLM\SYSTEM\CurrentControlSet\Services\VirtualAudioCable_{VacServiceGuid}\Parameters"" /v ""Number of cables"" /t REG_DWORD /d 4 /f | Out-Null
-'cable count set to 4' | Out-File $log -Append
+'cable count set to 4' | Out-File $log -Append");
 
-try {{
-  $d = Get-PnpDevice | Where-Object {{ $_.InstanceId -like 'ROOT\{{{VacServiceGuid}*' }} | Select-Object -First 1
-  if ($d) {{
+        // create the root device node: the documented SetupAPI sequence (devcon install):
+        // SetupDiCreateDeviceInfo + SPDRP_HARDWAREID + DIF_REGISTERDEVICE,
+        // then UpdateDriverForPlugAndPlayDevices binds the staged INF to the new devnode.
+        sb.AppendLine(@"$src = @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class DevCon
+{
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SP_DEVINFO_DATA
+    {
+        public int cbSize;
+        public Guid ClassGuid;
+        public uint DevInst;
+        public IntPtr Reserved;
+    }
+
+    [DllImport(""setupapi.dll"", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern IntPtr SetupDiCreateDeviceInfoList(ref Guid classGuid, IntPtr hwndParent);
+
+    [DllImport(""setupapi.dll"", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool SetupDiCreateDeviceInfo(
+        IntPtr devInfo, string deviceName, ref Guid classGuid, string deviceDescription,
+        IntPtr hwndParent, uint creationFlags, out SP_DEVINFO_DATA deviceInfoData);
+
+    [DllImport(""setupapi.dll"", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool SetupDiSetDeviceRegistryProperty(
+        IntPtr devInfo, ref SP_DEVINFO_DATA deviceInfoData,
+        uint property, byte[] propertyBuffer, uint propertyBufferSize);
+
+    [DllImport(""setupapi.dll"", SetLastError = true)]
+    static extern bool SetupDiCallClassInstaller(
+        uint installFunction, IntPtr devInfo, ref SP_DEVINFO_DATA deviceInfoData);
+
+    [DllImport(""setupapi.dll"", SetLastError = true)]
+    static extern bool SetupDiDestroyDeviceInfoList(IntPtr devInfo);
+
+    [DllImport(""newdev.dll"", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool UpdateDriverForPlugAndPlayDevices(
+        IntPtr hwndParent, string hardwareId, string fullInfPath,
+        uint installFlags, out bool rebootRequired);
+
+    const uint DICD_GENERATE_ID = 0x00000001;
+    const uint DIF_REGISTERDEVICE = 0x00000019;
+    const uint SPDRP_HARDWAREID = 0x00000001;
+    const uint INSTALLFLAG_FORCE = 0x00000001;
+    static readonly Guid MediaClass = new Guid(""4d36e96c-e325-11ce-bfc1-08002be10318"");
+
+    public static string Install(string hwid, string infPath)
+    {
+        IntPtr list = SetupDiCreateDeviceInfoList(ref MediaClass, IntPtr.Zero);
+        if (list == new IntPtr(-1) || list == IntPtr.Zero)
+            return ""SetupDiCreateDeviceInfoList failed: "" + Marshal.GetLastWin32Error();
+        try
+        {
+            SP_DEVINFO_DATA dev = new SP_DEVINFO_DATA();
+            dev.cbSize = Marshal.SizeOf<SP_DEVINFO_DATA>();
+            if (!SetupDiCreateDeviceInfo(list, ""ROOT\\{" + VacServiceGuid + @"}\\0000"", MediaClass,
+                    ""Virtual Audio Cable 4"", IntPtr.Zero, DICD_GENERATE_ID, out dev))
+                return ""SetupDiCreateDeviceInfo failed: "" + Marshal.GetLastWin32Error();
+
+            byte[] hwidBytes = System.Text.Encoding.Unicode.GetBytes(hwid + ""\0\0"");
+            if (!SetupDiSetDeviceRegistryProperty(list, ref dev, SPDRP_HARDWAREID,
+                    hwidBytes, (uint)hwidBytes.Length))
+                return ""SetupDiSetDeviceRegistryProperty failed: "" + Marshal.GetLastWin32Error();
+
+            if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE, list, ref dev))
+                return ""DIF_REGISTERDEVICE failed: "" + Marshal.GetLastWin32Error();
+
+            if (!UpdateDriverForPlugAndPlayDevices(IntPtr.Zero, hwid, infPath,
+                    INSTALLFLAG_FORCE, out bool reboot))
+                return ""UpdateDriverForPlugAndPlayDevices failed: "" + Marshal.GetLastWin32Error();
+
+            return ""device node created"" + (reboot ? "" (reboot recommended)"" : """");
+        }
+        finally { SetupDiDestroyDeviceInfoList(list); }
+    }
+}
+'@
+Add-Type -TypeDefinition $src -Language CSharp
+try {
+  $r = [DevCon]::Install('VirtualAudioCable_" + VacServiceGuid + @"', '" + infFullPath.Replace("'", "''") + @"')
+  $r | Out-File $log -Append
+} catch { ('devnode creation failed: ' + $_.Exception.Message) | Out-File $log -Append }
+
+Start-Sleep 3
+try {
+  $d = Get-PnpDevice | Where-Object { $_.InstanceId -like 'ROOT\*" + VacServiceGuid + @"*' } | Select-Object -First 1
+  if ($d) {
+    if ($d.Status -ne 'OK') {
+      Enable-PnpDevice -InstanceId $d.InstanceId -Confirm:$false
+      Start-Sleep 2
+    }
     Disable-PnpDevice -InstanceId $d.InstanceId -Confirm:$false
     Start-Sleep 2
     Enable-PnpDevice -InstanceId $d.InstanceId -Confirm:$false
     'device bounced' | Out-File $log -Append
-  }} else {{ 'no device node yet (will appear on first use)' | Out-File $log -Append }}
-}} catch {{ ('bounce failed: ' + $_.Exception.Message) | Out-File $log -Append }}
-'=== DONE ===' | Out-File $log -Append";
+  } else { 'no device node found after creation attempt' | Out-File $log -Append }
+} catch { ('bounce failed: ' + $_.Exception.Message) | Out-File $log -Append }
+'=== DONE ===' | Out-File $log -Append");
+
+        return sb.ToString();
     }
 
     private static readonly string[] ChannelNames = { "Game", "Chat", "Media", "Aux" };

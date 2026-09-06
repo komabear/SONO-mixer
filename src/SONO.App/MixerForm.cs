@@ -302,9 +302,10 @@ public class MixerForm : Form
             UpdateOutputButtonLabel();
             _routing.Rebuild(_settings.RealOutputId);
             RefreshRoutingVolumes();
-            // first-run: VAC present but no SONO - X endpoints yet → offer the one-click wizard
-            if (!Core.SystemIntegrations.DeviceSetup.SonoEndpointsPresent()
-                && Core.SystemIntegrations.DeviceSetup.VacServicePresent)
+            // first-run: no SONO - X endpoints yet → offer the one-click wizard
+            // (covers BOTH cases: VAC present but unconfigured, and VAC fully absent —
+            // the wizard then asks for the user's package and installs the driver)
+            if (!Core.SystemIntegrations.DeviceSetup.SonoEndpointsPresent())
             {
                 BeginInvoke(() =>
                 {

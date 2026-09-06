@@ -23,6 +23,8 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
+ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 SetupIconFile=assets_installer\sono.ico
 
