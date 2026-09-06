@@ -764,12 +764,30 @@ public class MixerForm : Form
         UpdateOutputButtonLabel();
 
         string defaultNote = "";
+        // make SONO - Game the Windows default: resolve the device by name right here —
+        // ResolveDeviceMappings may have just rewritten it, and endpoint IDs can be stale
         var game = _settings.Channels.FirstOrDefault(c => c.Name == "Game");
-        if (game?.DeviceId is string gid && gid.StartsWith("0.0.0.0"))
+        string? gid = game?.DeviceId;
+        if (string.IsNullOrEmpty(gid) || !gid.StartsWith("0.0.0.0"))
+        {
+            try
+            {
+                gid = new MMDeviceEnumerator().EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
+                    .FirstOrDefault(d => d.FriendlyName.StartsWith("SONO - Game", StringComparison.OrdinalIgnoreCase))?.ID;
+            }
+            catch { }
+        }
+        if (string.IsNullOrEmpty(gid))
+        {
+            defaultNote = "\nCould not find \"SONO - Game\" to set as Windows default — set it manually in Sound settings.";
+            Core.Diagnostics.Log.Write("setup: SONO - Game endpoint not found for default-set");
+        }
+        else
         {
             try
             {
                 SONO.Core.Audio.PolicyConfigApi.SetDefaultDeviceAllRoles(gid);
+                defaultNote = "\nWindows default output set to SONO - Game.";
                 Core.Diagnostics.Log.Write($"setup: default output set to SONO - Game ({gid})");
             }
             catch (Exception ex)
