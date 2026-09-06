@@ -116,7 +116,7 @@ public static class DevCon
 
     [DllImport(""setupapi.dll"", SetLastError = true, CharSet = CharSet.Unicode)]
     static extern bool SetupDiCreateDeviceInfo(
-        IntPtr devInfo, string deviceName, ref Guid classGuid, string deviceDescription,
+        IntPtr devInfo, string deviceName, Guid classGuid, string deviceDescription,
         IntPtr hwndParent, uint creationFlags, out SP_DEVINFO_DATA deviceInfoData);
 
     [DllImport(""setupapi.dll"", SetLastError = true, CharSet = CharSet.Unicode)]
@@ -144,14 +144,16 @@ public static class DevCon
 
     public static string Install(string hwid, string infPath)
     {
-        IntPtr list = SetupDiCreateDeviceInfoList(ref MediaClass, IntPtr.Zero);
+        // C# 5/PnP: static readonly fields cannot be passed by ref — copy to locals
+        Guid mediaClass = MediaClass;
+        IntPtr list = SetupDiCreateDeviceInfoList(ref mediaClass, IntPtr.Zero);
         if (list == new IntPtr(-1) || list == IntPtr.Zero)
             return ""SetupDiCreateDeviceInfoList failed: "" + Marshal.GetLastWin32Error();
         try
         {
             SP_DEVINFO_DATA dev = new SP_DEVINFO_DATA();
-            dev.cbSize = Marshal.SizeOf<SP_DEVINFO_DATA>();
-            if (!SetupDiCreateDeviceInfo(list, ""ROOT\\{" + VacServiceGuid + @"}\\0000"", MediaClass,
+            dev.cbSize = Marshal.SizeOf(typeof(SP_DEVINFO_DATA));
+            if (!SetupDiCreateDeviceInfo(list, ""ROOT\\{" + VacServiceGuid + @"}\\0000"", mediaClass,
                     ""Virtual Audio Cable 4"", IntPtr.Zero, DICD_GENERATE_ID, out dev))
                 return ""SetupDiCreateDeviceInfo failed: "" + Marshal.GetLastWin32Error();
 
@@ -163,8 +165,10 @@ public static class DevCon
             if (!SetupDiCallClassInstaller(DIF_REGISTERDEVICE, list, ref dev))
                 return ""DIF_REGISTERDEVICE failed: "" + Marshal.GetLastWin32Error();
 
+            // C# 5 only (Windows PowerShell 5.1 Add-Type): no inline out declarations
+            bool reboot;
             if (!UpdateDriverForPlugAndPlayDevices(IntPtr.Zero, hwid, infPath,
-                    INSTALLFLAG_FORCE, out bool reboot))
+                    INSTALLFLAG_FORCE, out reboot))
                 return ""UpdateDriverForPlugAndPlayDevices failed: "" + Marshal.GetLastWin32Error();
 
             return ""device node created"" + (reboot ? "" (reboot recommended)"" : """");
@@ -287,9 +291,10 @@ reg add ""HKLM\SYSTEM\CurrentControlSet\Services\VirtualAudioCable_" + VacServic
         var psi = new System.Diagnostics.ProcessStartInfo
         {
             FileName = "powershell.exe",
-            Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\"",
+            Arguments = $"-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{scriptPath}\"",
             Verb = "runas",       // triggers UAC
             UseShellExecute = true,
+            WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
         };
         using var p = System.Diagnostics.Process.Start(psi)!;
         p.WaitForExit(120_000);
