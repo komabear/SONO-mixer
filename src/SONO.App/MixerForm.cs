@@ -250,17 +250,21 @@ public class MixerForm : Form
         right.Controls.Add(_status);
 
         // theme mascot: owner-drawn in the reserved strip between the app list and the status
-        // line → real alpha, bottom-center. Bottom margin matches the card grid (10px).
+        // line → real alpha, bottom-center, SCALED TO FIT the band (aspect preserved).
+        // Bottom margin matches the card grid (10px).
         if (_mascot is not null)
         {
             right.Paint += (_, e) =>
             {
                 if (_mascot is null) return;
                 bool compact = right.Height < 430;
-                int w = compact ? 34 : 130;
-                int h = (int)(w * (float)_mascot.Height / _mascot.Width);
+                int bandH = compact ? 34 : 130;
+                int availW = right.Width - 20;                       // 10px side margins
+                float scale = Math.Min(availW / (float)_mascot.Width, bandH / (float)_mascot.Height);
+                int w = Math.Max(1, (int)(_mascot.Width * scale));
+                int h = Math.Max(1, (int)(_mascot.Height * scale));
                 int x = (right.Width - w) / 2;
-                int y = right.Height - h - 10;   // same bottom margin as the channel cards
+                int y = right.Height - h - 10;                       // same bottom margin as the cards
                 e.Graphics.DrawImage(_mascot, x, y, w, h);
             };
             right.Resize += (_, _) => right.Invalidate();
