@@ -345,18 +345,36 @@ public class MixerForm : Form
 
     // ---------- visibility / tray ----------
 
+    private Rectangle _lastGoodBounds = Rectangle.Empty;
+
     private void ShowWindow()
     {
-        if (!Visible)
-        {
-            WindowState = FormWindowState.Normal;
-            Show();
-        }
+        // restore robustly: tray restore used to leave the window on the taskbar but
+        // not visible on screen (window managers / minimized-state leftovers)
+        if (!Visible) Show();
+        if (WindowState != FormWindowState.Normal) WindowState = FormWindowState.Normal;
+
+        if (_lastGoodBounds is { Width: > 0, Height: > 0 } b)
+            Bounds = b;
+        else
+            CenterToScreen();
+
+        // clamp back on-screen in case the saved spot belongs to a disconnected monitor
+        var screen = Screen.FromControl(this).Bounds;
+        if (!screen.IntersectsWith(Bounds))
+            Location = new Point(
+                Math.Max(screen.Left, screen.Left + (screen.Width - Width) / 2),
+                Math.Max(screen.Top, screen.Top + (screen.Height - Height) / 2));
+
+        BringToFront();
         Activate();
     }
 
     private void HideToTray(bool showBalloon)
     {
+        // remember where to restore to (only meaningful in Normal state)
+        if (WindowState == FormWindowState.Normal && Visible)
+            _lastGoodBounds = Bounds;
         Hide();
         if (showBalloon)
             _tray.ShowBalloonTip(2500, "SONO is still running",
