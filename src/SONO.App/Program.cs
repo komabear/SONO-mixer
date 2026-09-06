@@ -40,12 +40,13 @@ internal static class Program
         // AND re-pointed the entry whenever the app was launched from a different path
         // (e.g. a dev build), leaving a stale entry after uninstall.
         // After that, the in-app ⚙ toggle (settings.StartWithWindows) is the only writer.
-        if (autostartRequested || (settings.StartWithWindows && !settings.AutostartConfigured))
+        // NOTE: nothing here RE-creates the entry if it's missing — uninstall/settings-off
+        // stay respected even if settings.json still says StartWithWindows=true.
+        if (autostartRequested && !Core.SystemIntegrations.Autostart.IsEnabled())
         {
             try
             {
-                if (!Core.SystemIntegrations.Autostart.IsEnabled())
-                    Core.SystemIntegrations.Autostart.Set(true);
+                Core.SystemIntegrations.Autostart.Set(true);
                 settings.AutostartConfigured = true;
                 SettingsStore.Save(settings);
             }
