@@ -385,7 +385,7 @@ public class MixerForm : Form
 
     private void CreateCard(ChannelDefinition def)
     {
-        var card = new ChannelCard(def) { Dock = DockStyle.Fill, Margin = new Padding(8) };
+        var card = new ChannelCard(def, _hotkeys) { Dock = DockStyle.Fill, Margin = new Padding(8) };
         card.VolumeLive += (_, _) => { RefreshRoutingVolumes(); _reconcileDebounce.Start(); };
         card.VolumeCommitted += _ => { Save(); _engine.ReconcileNow(); };
         card.MuteToggled += _ => { Save(); _engine.ReconcileNow(); RefreshRoutingVolumes(); };

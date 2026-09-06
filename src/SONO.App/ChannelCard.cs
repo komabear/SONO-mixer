@@ -18,6 +18,7 @@ public class ChannelCard : Control
     private const int HeaderH = 42, VolRowH = 30, HotkeyRowH = 34;
 
     private readonly ChannelDefinition _def;
+    private readonly HotkeyManager _hotkeys;
     private readonly FlowLayoutPanel _apps;
     private readonly Label _name;
     private readonly Button _mute;
@@ -38,9 +39,10 @@ public class ChannelCard : Control
     public event Action<string>? AddAppRequested;
     public event Action<string>? MakeDefaultRequested;
 
-    public ChannelCard(ChannelDefinition def)
+    public ChannelCard(ChannelDefinition def, SONO.App.HotkeyManager hotkeys)
     {
         _def = def;
+        _hotkeys = hotkeys;
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
                  | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
         BackColor = Theme.Card;
@@ -107,14 +109,14 @@ public class ChannelCard : Control
 
         // ---- hotkeys (bottom, with breathing room) — 3rd column is an explicit clear button ----
         var hotkeysWrap = new Panel { Dock = DockStyle.Bottom, Height = HotkeyRowH * 3 + 22, BackColor = Color.Transparent, Padding = new Padding(0, 10, 0, 12) };
-        var hotkeys = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 3 };
-        hotkeys.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
-        hotkeys.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        hotkeys.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30));
+        var hotkeysGrid = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 3 };
+        hotkeysGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
+        hotkeysGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        hotkeysGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30));
         int y = 0;
         foreach (var slot in Slots)
         {
-            hotkeys.RowStyles.Add(new RowStyle(SizeType.Absolute, HotkeyRowH));
+            hotkeysGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, HotkeyRowH));
             var lbl = new Label
             {
                 Text = SlotNames[slot],
@@ -160,6 +162,8 @@ public class ChannelCard : Control
             };
             clear.FlatAppearance.BorderSize = 0;
             var slotCaptured = slot;
+            box.OnCaptureStart = () => _hotkeys.Suspend();
+            box.OnCaptureEnd = () => _hotkeys.Resume();
             void ApplyHotkey(string? text)
             {
                 _def.SetHotkey(slotCaptured, text);
@@ -175,15 +179,15 @@ public class ChannelCard : Control
                 box.Parent?.Focus();        // hand focus back to the pill container
             };
             Tips.SetToolTip(clear, "Clear this shortcut");
-            hotkeys.Controls.Add(lbl, 0, y);
+            hotkeysGrid.Controls.Add(lbl, 0, y);
             field.Controls.Add(box);
-            hotkeys.Controls.Add(field, 1, y);
-            hotkeys.Controls.Add(clear, 2, y);
+            hotkeysGrid.Controls.Add(field, 1, y);
+            hotkeysGrid.Controls.Add(clear, 2, y);
             _hotkeyBoxes[slot] = box;
             _hotkeyFields[slot] = field;
             y++;
         }
-        hotkeysWrap.Controls.Add(hotkeys);
+        hotkeysWrap.Controls.Add(hotkeysGrid);
 
         // ---- apps area (fill): tonal surface, no stroke (material) ----
         var appsWrap = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Elevated, Padding = new Padding(1) };

@@ -40,6 +40,7 @@ public class HotkeyCaptureBox : Control
                  | ControlStyles.ResizeRedraw | ControlStyles.Selectable | ControlStyles.StandardClick, true);
         TabStop = true;
         Cursor = Cursors.Hand;
+        Name = "hkbox" + GetHashCode().ToString("x8");
     }
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -49,17 +50,26 @@ public class HotkeyCaptureBox : Control
         set { Tag = value; Invalidate(); }
     }
 
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Action? OnCaptureStart { get; set; }
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public Action? OnCaptureEnd { get; set; }
+
     protected override void OnEnter(EventArgs e)
     {
         base.OnEnter(e);
         Capturing = true;
+        OnCaptureStart?.Invoke();
+        SONO.Core.Diagnostics.Log.Write($"hkbox {Name} ENTER");
         Invalidate();
     }
 
     protected override void OnLeave(EventArgs e)
     {
         base.OnLeave(e);
+        if (Capturing) { SONO.Core.Diagnostics.Log.Write("hkbox capture ended (focus lost)"); }
         Capturing = false;
+        OnCaptureEnd?.Invoke();
         Invalidate();
     }
 
@@ -73,6 +83,7 @@ public class HotkeyCaptureBox : Control
     private void ReleaseFocus()
     {
         Capturing = false;
+        OnCaptureEnd?.Invoke();
         var parent = Parent;
         while (parent is not null && !parent.CanFocus) parent = parent.Parent;
         parent?.Focus();
@@ -89,6 +100,7 @@ public class HotkeyCaptureBox : Control
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        SONO.Core.Diagnostics.Log.Write($"hkbox keydown={e.KeyCode} capturing={Capturing}");
         if (!Capturing) return;
         e.Handled = true;
 
@@ -104,6 +116,7 @@ public class HotkeyCaptureBox : Control
         if (e.Modifiers.HasFlag(Keys.LWin) || e.Modifiers.HasFlag(Keys.RWin)) parts.Add("Win");
         if (parts.Count == 0 && !MediaKeys.Contains(key)) return;   // bare key: only media allowed
         parts.Add(FormatKey(key));
+        SONO.Core.Diagnostics.Log.Write($"hkbox commit={string.Join("+", parts)}");
         SetHotkey(string.Join("+", parts));
         ReleaseFocus();   // commit + deselect in one gesture
     }

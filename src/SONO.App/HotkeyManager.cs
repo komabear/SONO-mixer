@@ -46,34 +46,76 @@ public sealed class HotkeyManager : IDisposable
     };
 
     private readonly Dictionary<int, (string ChannelId, HotkeySlot Slot)> _bindings = new();
+    private List<(string ChannelId, HotkeySlot Slot, string? HotkeyText)>? _lastBindings;
+    private bool _suspended;
+
+    /// <summary>Temporarily unregister all hotkeys (while a capture field is armed, so the
+    /// keys reach the field instead of being consumed by the global hotkey system).</summary>
+    public void Suspend()
+    {
+        lock (this)
+        {
+            if (_suspended) return;
+            _lastBindings = _bindings.Select(b => (b.Value.ChannelId, b.Value.Slot, _textById.GetValueOrDefault(b.Key))).ToList();
+            foreach (var id in _registered.Keys.ToList()) { UnregisterHotKey(_window.Handle, id); }
+            _registered.Clear();
+            _bindings.Clear();
+            _textById.Clear();
+            _suspended = true;
+            SONO.Core.Diagnostics.Log.Write("hotkeys suspended (capture mode)");
+        }
+    }
+
+    /// <summary>Re-register the suspended set. No-op when a commit already applied a fresh
+    /// set (ApplyAll ends suspension) — restoring the snapshot would revert the new binding.</summary>
+    public void Resume()
+    {
+        lock (this)
+        {
+            if (!_suspended) return;
+            var restore = _lastBindings!;
+            _lastBindings = null;
+            _suspended = false;
+            ApplyAll(restore);
+            SONO.Core.Diagnostics.Log.Write("hotkeys resumed (no commit during capture)");
+        }
+    }
+
+    private readonly Dictionary<int, string> _textById = new();
 
     /// <summary>Replace ALL registrations with the given (hotkeyText → target) set. Returns per-binding error messages.</summary>
     public List<string> ApplyAll(IEnumerable<(string ChannelId, HotkeySlot Slot, string? HotkeyText)> bindings)
     {
-        var errors = new List<string>();
-        foreach (var id in _registered.Keys.ToList()) { UnregisterHotKey(_window.Handle, id); }
-        _registered.Clear();
-        _bindings.Clear();
-
-        foreach (var (channelId, slot, text) in bindings)
+        lock (this)
         {
-            if (string.IsNullOrWhiteSpace(text)) continue;
-            if (!TryParse(text, out var mods, out var vk, out var err)) { errors.Add($"'{text}': {err}"); continue; }
+            _suspended = false;   // an explicit apply always ends suspension
+            _lastBindings = null;
+            var errors = new List<string>();
+            foreach (var id in _registered.Keys.ToList()) { UnregisterHotKey(_window.Handle, id); }
+            _registered.Clear();
+            _bindings.Clear();
 
-            int id = _nextId++;
-            if (RegisterHotKey(_window.Handle, id, mods | MOD_NOREPEAT, vk))
+            foreach (var (channelId, slot, text) in bindings)
             {
-                _registered[id] = (mods, vk);
-                _bindings[id] = (channelId, slot);
-                SONO.Core.Diagnostics.Log.Write($"hotkey registered: '{text}' -> {channelId}/{slot}");
+                if (string.IsNullOrWhiteSpace(text)) continue;
+                if (!TryParse(text, out var mods, out var vk, out var err)) { errors.Add($"'{text}': {err}"); continue; }
+
+                int id = _nextId++;
+                if (RegisterHotKey(_window.Handle, id, mods | MOD_NOREPEAT, vk))
+                {
+                    _registered[id] = (mods, vk);
+                    _bindings[id] = (channelId, slot);
+                    _textById[id] = text;
+                    SONO.Core.Diagnostics.Log.Write($"hotkey registered: '{text}' -> {channelId}/{slot}");
+                }
+                else
+                {
+                    errors.Add($"'{text}' is taken by another program");
+                    SONO.Core.Diagnostics.Log.Write($"hotkey FAILED: '{text}' (RegisterHotKey error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()})");
+                }
             }
-            else
-            {
-                errors.Add($"'{text}' is taken by another program");
-                SONO.Core.Diagnostics.Log.Write($"hotkey FAILED: '{text}' (RegisterHotKey error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()})");
-            }
+            return errors;
         }
-        return errors;
     }
 
     public static bool TryParse(string text, out uint mods, out uint vk, out string error)
