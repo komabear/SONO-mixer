@@ -1,4 +1,4 @@
-<img width="1024" height="494" alt="image" src="https://github.com/user-attachments/assets/82d610fb-a374-4421-b5bd-e3221a277730" />
+<img width="524" alt="image" src="https://github.com/user-attachments/assets/82d610fb-a374-4421-b5bd-e3221a277730" />
 
 
 A lightweight SteelSeries-Sonar-style audio mixer for Windows. While SONO runs, each of its
