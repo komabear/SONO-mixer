@@ -35,9 +35,20 @@ internal static class Program
                                              // per-form engines used to stack on theme swaps
                                              // (double capture ≈ +6 dB + phasey audio)
 
-        if (autostartRequested || settings.StartWithWindows)
+        // autostart: write the Run key ONCE, on the very first launch of a given exe.
+        // Re-asserting on every launch (the old behavior) stomped the user's "off" choice
+        // AND re-pointed the entry whenever the app was launched from a different path
+        // (e.g. a dev build), leaving a stale entry after uninstall.
+        // After that, the in-app ⚙ toggle (settings.StartWithWindows) is the only writer.
+        if (autostartRequested || (settings.StartWithWindows && !settings.AutostartConfigured))
         {
-            try { if (!Core.SystemIntegrations.Autostart.IsEnabled()) Core.SystemIntegrations.Autostart.Set(true); }
+            try
+            {
+                if (!Core.SystemIntegrations.Autostart.IsEnabled())
+                    Core.SystemIntegrations.Autostart.Set(true);
+                settings.AutostartConfigured = true;
+                SettingsStore.Save(settings);
+            }
             catch { /* non-fatal */ }
         }
 

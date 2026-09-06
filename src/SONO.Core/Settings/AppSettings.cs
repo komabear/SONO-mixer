@@ -21,6 +21,9 @@ public sealed class AppSettings
 
     /// <summary>Active UI theme id (see ThemeCatalog).</summary>
     public string ThemeId { get; set; } = "tokyo-night";
+    /// <summary>True once the app has written the autostart Run key for the first time —
+    /// prevents re-asserting it (and re-pointing it at a different exe path) every launch.</summary>
+    public bool AutostartConfigured { get; set; }
     public List<ChannelDefinition> Channels { get; set; } = new();
 }
 

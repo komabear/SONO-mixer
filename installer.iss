@@ -54,11 +54,23 @@ var
   VacScriptCopy: String;
 
 function InitializeUninstall(): Boolean;
+var
+  ResultCode: Integer;
 begin
   Result := True;
   RemoveVac := False;
 
-  // Only offer VAC removal if there is something to remove.
+  // 1) make sure SONO isn't running (a running app holds files and re-writes its
+  //    autostart entry on exit paths): graceful close first, then hard kill
+  Exec('taskkill.exe', '/IM SONO.App.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(800);
+  Exec('taskkill.exe', '/F /IM SONO.App.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  // 2) clear the per-user autostart entry (whatever exe path it points at)
+  RegDeleteValue(HKEY_CURRENT_USER,
+    'Software\Microsoft\Windows\CurrentVersion\Run', 'SONO');
+
+  // 3) offer VAC removal if there is something to remove.
   if FileExists('C:\Windows\System32\drivers\vrtaucbl.sys')
      or RegKeyExists(HKLM, 'SYSTEM\CurrentControlSet\Services\VirtualAudioCable_83ed7f0e-2028-4956-b0b4-39c76fdaef1d') then
   begin
