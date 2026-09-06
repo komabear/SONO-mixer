@@ -28,7 +28,7 @@ PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
-SetupIconFile=assets_installer\sono.ico
+SetupIconFile=installer\sono.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
