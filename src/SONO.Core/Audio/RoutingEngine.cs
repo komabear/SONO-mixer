@@ -89,13 +89,20 @@ public sealed class RoutingEngine : IDisposable
 
 #pragma warning disable CS0618 // NAudio 3 deprecates these in favor of the builder API; revisit later
                     var capture = new WasapiLoopbackCapture(dev);
-                    var buffer = new BufferedWaveProvider(capture.WaveFormat)
+                    // NAudio 3.x: BufferDuration is read-only — set via constructor (300 ms cap)
+                    var buffer = new BufferedWaveProvider(capture.WaveFormat, TimeSpan.FromMilliseconds(300))
                     {
                         DiscardOnBufferOverflow = true,
                     };
                     capture.DataAvailable += (_, e) => buffer.AddSamples(e.Buffer, 0, e.BytesRecorded);
 
-                    ISampleProvider chain = buffer.ToSampleProvider();
+                    // drift guard: the cable clock and the real DAC clock differ slightly, so
+                    // buffered audio accumulates over minutes (growing delay, then overflow
+                    // silence). Trim the oldest backlog whenever it exceeds the latency budget.
+                    ISampleProvider chain = new BoundedLatencySampleProvider(
+                        buffer, buffer.ToSampleProvider(),
+                        target: TimeSpan.FromMilliseconds(100),
+                        max: TimeSpan.FromMilliseconds(150));
                     if (chain.WaveFormat.SampleRate != MixerRate || chain.WaveFormat.Channels != MixerChans)
                         chain = new WdlResamplingSampleProvider(chain, MixerRate);
                     if (chain.WaveFormat.Channels == 1)
@@ -117,7 +124,9 @@ public sealed class RoutingEngine : IDisposable
                     _deviceToChannel[devId] = ch.Id;
                 }
 
-                _output = new WasapiOut(outDevice, AudioClientShareMode.Shared, false, 60);
+                // event-driven playback at 100 ms: timer-polling at 60 ms starved under load
+                // (the "audio goes mute then back" reports)
+                _output = new WasapiOut(outDevice, AudioClientShareMode.Shared, true, 100);
 #pragma warning restore CS0618
                 _output.Init(new SampleToWaveProvider(_mixer));
                 _output.Play();
