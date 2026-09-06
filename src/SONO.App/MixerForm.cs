@@ -313,13 +313,28 @@ public class MixerForm : Form
         trayMenu.Items.Add("Exit", null, (_, _) => CloseReally());
         _tray.ContextMenuStrip = trayMenu;
         _tray.DoubleClick += (_, _) => ShowWindow();
-        // single left-click on a mis-route balloon → jump straight to the fix
-        _tray.MouseClick += (_, e) =>
+        // single left-click right after a mis-route BALLOON (not any later click) → open the fix.
+        // The flag expires: a stale click must just open the window like a normal tray click.
+        _tray.BalloonTipClicked += (_, _) =>
         {
-            if (e.Button == MouseButtons.Left && _misrouteBalloonPending && _misroutes.Count > 0)
+            if (_misroutes.Count > 0)
             {
                 _misrouteBalloonPending = false;
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:appsvolume") { UseShellExecute = true });
+            }
+        };
+        _tray.MouseClick += (_, e) =>
+        {
+            // left-click within the balloon's grace window follows the balloon's action;
+            // otherwise a left-click behaves like double-click (opens the mixer)
+            if (e.Button == MouseButtons.Left)
+            {
+                if (_misrouteBalloonPending && _misroutes.Count > 0)
+                {
+                    _misrouteBalloonPending = false;
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:appsvolume") { UseShellExecute = true });
+                }
+                else ShowWindow();
             }
         };
 
@@ -670,6 +685,8 @@ public class MixerForm : Form
                             (_misroutes.Count > 1 ? $" (+{_misroutes.Count - 1} more)" : "") +
                             "\nClick to open Volume mixer and fix it.", ToolTipIcon.Warning);
                         _misrouteBalloonPending = true;
+                        // the balloon is transient: its click-action must expire with it
+                        Task.Delay(6000).ContinueWith(_ => _misrouteBalloonPending = false);
                     }
                 });
             });
