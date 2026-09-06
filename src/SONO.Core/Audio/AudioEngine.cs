@@ -32,8 +32,10 @@ public sealed class AudioEngine : IDisposable
         _timer = new System.Threading.Timer(_ => SafeReconcile(), null, 0, periodMs);
     }
 
-    /// <summary>Immediate reconcile outside the poll (e.g. right after a slider move).</summary>
-    public void ReconcileNow() => SafeReconcile();
+    /// <summary>Immediate reconcile outside the poll (e.g. right after a slider move).
+    /// Runs on the threadpool: the full session enumeration is 50–200 ms of COM/pid
+    /// lookups — never on the UI thread (that was the slider lag). Tick marshals to UI.</summary>
+    public void ReconcileNow() => Task.Run(SafeReconcile);
 
     /// <summary>Per-app volume/mute for apps NOT in any channel (right-panel sliders). exe lower-case.</summary>
     public void SetIndependentVolume(string exe, float? vol, bool? mute)
