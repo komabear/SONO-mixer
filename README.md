@@ -1,7 +1,7 @@
 <img width="524" alt="image" src="https://github.com/user-attachments/assets/82d610fb-a374-4421-b5bd-e3221a277730" />
 
 
-A lightweight SteelSeries-Sonar-style audio mixer for Windows. While SONO runs, each of its
+A lightweight alternative to SteelSeries-Sonar-style audio mixer for Windows. While SONO runs, each of its
 four channels — **Game / Chat / Media / Aux** — acts on its own virtual output device in
 Windows: you point each app at a channel's device (one-time, per app), and SONO captures the
 channels, applies volume/mute, and mixes everything back out of your real speakers or
