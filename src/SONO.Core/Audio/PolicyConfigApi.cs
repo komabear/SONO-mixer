@@ -51,4 +51,15 @@ public static class PolicyConfigApi
         int hr = client.SetDefaultEndpoint(deviceId, role);
         if (hr != 0) throw new InvalidOperationException($"SetDefaultEndpoint failed: 0x{hr:X8}");
     }
+
+    /// <summary>Set the default for all three roles at once.</summary>
+    public static void SetDefaultDeviceAllRoles(string deviceId)
+    {
+        var client = (IPolicyConfig)new PolicyConfigClient();
+        foreach (var role in new[] { 0, 1, 2 })
+        {
+            int hr = client.SetDefaultEndpoint(deviceId, role);
+            if (hr != 0) throw new InvalidOperationException($"SetDefaultEndpoint(role {role}) failed: 0x{hr:X8}");
+        }
+    }
 }

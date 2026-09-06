@@ -650,7 +650,7 @@ public class MixerForm : Form
         var endpoints = Core.SystemIntegrations.DeviceSetup.VacRenderEndpoints();
         string? driverLog = null;
 
-        using var progress = new SetupProgressDialog();
+        using var progress = new SetupProgressDialog { StartPosition = FormStartPosition.CenterParent };
 
         // ---- Phase 0: no VAC devices at all → install the driver from the user's own package
         if (endpoints.Count == 0 && !Core.SystemIntegrations.DeviceSetup.VacServicePresent)
@@ -687,7 +687,7 @@ public class MixerForm : Form
         }
 
         progress.SetStatus($"Configuring {endpoints.Count} device(s) — naming channels SONO - Game / Chat / Media / Aux…\nApprove the administrator prompt.");
-        progress.Show(this);
+        if (!progress.Visible) progress.Show(this);
         var step2 = new Progress<string>(s => progress.SetStatus(s));
 
         if (endpoints.Count < 4)
@@ -704,19 +704,38 @@ public class MixerForm : Form
             return;
         }
 
-        progress.SetStatus("Almost done — restarting the devices…");
+        progress.SetStatus("Almost done — restarting the devices and setting defaults…");
         // wait a moment for the device bounce to re-enumerate, then re-resolve
         await Task.Delay(4500);
-        progress.Close();
 
+        // fresh identities → re-resolve mappings, then make SONO - Game the Windows default
         ResolveDeviceMappings();
         _routing.Rebuild(_settings.RealOutputId);
         UpdateOutputButtonLabel();
+
+        string defaultNote = "";
+        var game = _settings.Channels.FirstOrDefault(c => c.Name == "Game");
+        if (game?.DeviceId is string gid && gid.StartsWith("0.0.0.0"))
+        {
+            try
+            {
+                SONO.Core.Audio.PolicyConfigApi.SetDefaultDeviceAllRoles(gid);
+                Core.Diagnostics.Log.Write($"setup: default output set to SONO - Game ({gid})");
+            }
+            catch (Exception ex)
+            {
+                defaultNote = $"\nCould not set SONO - Game as Windows default automatically ({ex.Message}).";
+                Core.Diagnostics.Log.Write($"setup: SetDefaultEndpoint failed: {ex.Message}");
+            }
+        }
+
+        progress.Close();
         var ok = log.Contains(": OK") || (driverLog is not null && driverLog.Contains("device node created"));
         MessageBox.Show(this,
             (ok ? "Device setup finished.\n\n" : "Setup finished with some errors.\n\n") +
             ((driverLog is not null ? "[driver install]\n" + driverLog.Replace("\r\n", "\n") + "\n\n" : "") +
-            (log.Length > 0 ? "[device naming]\n" + log.Replace("\r\n", "\n") : "")),
+            (log.Length > 0 ? "[device naming]\n" + log.Replace("\r\n", "\n") : "") +
+            defaultNote),
             "SONO Mixer — setup", MessageBoxButtons.OK,
             ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
     }

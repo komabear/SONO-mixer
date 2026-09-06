@@ -310,6 +310,15 @@ reg add ""HKLM\SYSTEM\CurrentControlSet\Services\VirtualAudioCable_" + VacServic
 }} catch {{ ('{name.Replace("'", "''")}: FAILED ' + $_.Exception.Message) | Out-File $log -Append }}");
         }
 
+        // hide the CAPTURE side of each cable (SONO only needs the render/output side;
+        // the "Line N" input devices would otherwise clutter every app's microphone list)
+        for (int i = 1; i <= 4; i++)
+        {
+            sb.AppendLine($@"reg add ""HKLM\SOFTWARE\EuMus Design\Virtual Audio Cable\4\Cable {i}"" /v ""Hide capture device"" /t REG_DWORD /d 1 /f | Out-Null
+reg add ""HKLM\SYSTEM\CurrentControlSet\Services\VirtualAudioCable_{VacServiceGuid}\Parameters\Cable {i}"" /v ""Hide capture device"" /t REG_DWORD /d 1 /f | Out-Null");
+        }
+        sb.AppendLine("'input (capture) devices hidden' | Out-File $log -Append");
+
         // bounce the VAC device so names take effect
         sb.AppendLine(@"try {
   $d = Get-PnpDevice | Where-Object { $_.InstanceId -like 'ROOT\{" + VacServiceGuid + @"*' } | Select-Object -First 1
