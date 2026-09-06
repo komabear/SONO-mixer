@@ -10,7 +10,6 @@ public class MixerForm : Form
     private readonly AudioEngine _engine;
     private readonly HotkeyManager _hotkeys;
     private readonly AppSettings _settings;
-    private readonly RoutingEngine _routing = new();          // per-cable capture: exclusive control
     private readonly RoutingHealthMonitor _health = new();
     private readonly NotifyIcon _tray;
     private readonly System.Windows.Forms.Timer _reconcileDebounce;
@@ -38,10 +37,15 @@ public class MixerForm : Form
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public bool SuppressCleanup { get; set; }
 
-    public MixerForm(AudioEngine engine, HotkeyManager hotkeys, AppSettings settings, bool launchedAtBoot)
+    private readonly RoutingEngine _routing;                  // shared ApplicationContext-wide
+                                                              // (theme swaps must NOT re-create it)
+                                                              // initialized from ctor param below
+    public MixerForm(AudioEngine engine, HotkeyManager hotkeys, RoutingEngine routing,
+        AppSettings settings, bool launchedAtBoot)
     {
         _engine = engine;
         _hotkeys = hotkeys;
+        _routing = routing;
         _settings = settings;
         _launchedAtBoot = launchedAtBoot;
         _hotkeys.Pressed += OnHotkey;
@@ -926,7 +930,7 @@ public class MixerForm : Form
         _tray.Visible = false;
         _tray.Dispose();
         _reconcileDebounce.Dispose();
-        if (!SuppressCleanup) _routing.Dispose();   // theme swap keeps routing alive
+        if (!SuppressCleanup) _routing.Dispose();   // shared engine; disposed only at real app exit
         base.OnFormClosed(e);
     }
 }

@@ -31,6 +31,9 @@ internal static class Program
         Theme.Apply(ThemeCatalog.Get(settings.ThemeId));
         var engine = new AudioEngine();
         var hotkeys = new HotkeyManager();
+        var routing = new RoutingEngine();   // ONE instance for the whole process —
+                                             // per-form engines used to stack on theme swaps
+                                             // (double capture ≈ +6 dB + phasey audio)
 
         if (autostartRequested || settings.StartWithWindows)
         {
@@ -40,7 +43,7 @@ internal static class Program
 
         // ApplicationContext lets us hot-swap the main form (theme changes) while the
         // audio engine, routing and hotkeys keep running.
-        Application.Run(new SonoContext(engine, hotkeys, settings, autostartRequested));
+        Application.Run(new SonoContext(engine, hotkeys, routing, settings, autostartRequested));
         GC.KeepAlive(mutex);
     }
 }
@@ -49,13 +52,16 @@ internal sealed class SonoContext : ApplicationContext
 {
     private readonly AudioEngine _engine;
     private readonly HotkeyManager _hotkeys;
+    private readonly RoutingEngine _routing;
     private readonly AppSettings _settings;
     private readonly bool _boot;
 
-    public SonoContext(AudioEngine engine, HotkeyManager hotkeys, AppSettings settings, bool boot)
+    public SonoContext(AudioEngine engine, HotkeyManager hotkeys, RoutingEngine routing,
+        AppSettings settings, bool boot)
     {
         _engine = engine;
         _hotkeys = hotkeys;
+        _routing = routing;
         _settings = settings;
         _boot = boot;
         ShowMain();
@@ -63,7 +69,7 @@ internal sealed class SonoContext : ApplicationContext
 
     private void ShowMain()
     {
-        var form = new MixerForm(_engine, _hotkeys, _settings, _boot);
+        var form = new MixerForm(_engine, _hotkeys, _routing, _settings, _boot);
         if (_hasBounds)
         {
             form.StartPosition = FormStartPosition.Manual;
