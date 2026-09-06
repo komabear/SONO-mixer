@@ -313,6 +313,15 @@ public class MixerForm : Form
         trayMenu.Items.Add("Exit", null, (_, _) => CloseReally());
         _tray.ContextMenuStrip = trayMenu;
         _tray.DoubleClick += (_, _) => ShowWindow();
+        // single left-click on a mis-route balloon → jump straight to the fix
+        _tray.MouseClick += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left && _misrouteBalloonPending && _misroutes.Count > 0)
+            {
+                _misrouteBalloonPending = false;
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:appsvolume") { UseShellExecute = true });
+            }
+        };
 
         _reconcileDebounce = new System.Windows.Forms.Timer { Interval = 150 };
         _reconcileDebounce.Tick += (_, _) =>
@@ -632,6 +641,7 @@ public class MixerForm : Form
 
     private List<RoutingHealthMonitor.MisRoute> _misroutes = new();
     private int _healthCooldown;
+    private bool _misrouteBalloonPending;   // balloon shown → next tray click opens Volume mixer
 
     private void OnTick(EngineSnapshot snap)
     {
@@ -649,6 +659,18 @@ public class MixerForm : Form
                     _misroutes = found;
                     if (_misroutes.Count != before && _status is not null)
                         _status.Text = $"▶ {snap.OutputDevice}{RoutingSuffix()}";
+                    // new mis-route (count grew) → tray balloon, since the status bar is
+                    // easy to miss and a mis-routed app bypasses its channel entirely
+                    if (_misroutes.Count > before)
+                    {
+                        var first = _misroutes.FirstOrDefault();
+                        _tray.ShowBalloonTip(4000, "SONO — app mis-routed",
+                            first is null ? "" :
+                            $"{first.Exe} is playing on \"{first.ActualDevice}\" instead of \"SONO - {first.ChannelName}\"." +
+                            (_misroutes.Count > 1 ? $" (+{_misroutes.Count - 1} more)" : "") +
+                            "\nClick to open Volume mixer and fix it.", ToolTipIcon.Warning);
+                        _misrouteBalloonPending = true;
+                    }
                 });
             });
         }
