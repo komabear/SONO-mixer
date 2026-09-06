@@ -7,7 +7,7 @@
 ; manual cleanup battle-tested, incl. pt-BR pnputil parsing).
 
 #define MyAppName "SONO Mixer"
-#define MyAppVersion "0.5.0"
+#define MyAppVersion "1.0.0"
 #define MyAppPublisher "komabear"
 #define MyAppExeName "SONO.App.exe"
 
