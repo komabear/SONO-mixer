@@ -122,11 +122,12 @@ public sealed class OsdWindow : Form
         var theme = Theme.Current;
         var accent = ColorTranslator.FromHtml(_def.ColorHex);
 
-        // rounded dark card (paint it — the Region clip uses the same shape)
+        // flat rectangle card (rounded corners aren't possible on this layered window
+        // without a Region clip, which broke painting) — clean 1px border instead
         using var card = new SolidBrush(theme.Card);
-        g.FillPath(card, RoundedPath(0, 0, ClientSize.Width - 1, ClientSize.Height - 1, 12));
+        g.FillRectangle(card, 0, 0, ClientSize.Width, ClientSize.Height);
         using var border = new Pen(theme.Border);
-        g.DrawPath(border, RoundedPath(0, 0, ClientSize.Width - 1, ClientSize.Height - 1, 12));
+        g.DrawRectangle(border, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
 
         // channel name (top-left) and value (top-right)
         using var nameFont = new Font("Segoe UI Semibold", 10f);
@@ -161,7 +162,4 @@ public sealed class OsdWindow : Form
         p.CloseFigure();
         return p;
     }
-
-    private static Region RoundedRegion(int w, int h, float r)
-        => new(RoundedPath(0, 0, w, h, r));
 }
