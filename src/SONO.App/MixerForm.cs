@@ -17,6 +17,7 @@ public class MixerForm : Form
     private readonly Dictionary<string, ChannelCard> _cards = new();
     private readonly Dictionary<string, Panel> _appRows = new(StringComparer.OrdinalIgnoreCase);
     private readonly ToolStripMenuItem _miAutostart, _miMinimized;
+    private bool _setupRunning;
     private readonly Label _status;
     private readonly TableLayoutPanel _table;
     private DarkComboBox _outputPick = new();
@@ -634,20 +635,36 @@ public class MixerForm : Form
         catch { return "?"; }
     }
 
-    /// <summary>One-elevation setup: cables=4, endpoint renames, device bounce. Reports per-step results.</summary>
+    /// <summary>One-elevation setup: driver install (if needed), cables=4, endpoint renames,
+    /// device bounce. Shows a progress dialog throughout; reports per-step results at the end.</summary>
     private async void RunDeviceSetupWizard()
+    {
+        if (_setupRunning) return;          // no double-run
+        _setupRunning = true;
+        try { await RunDeviceSetupWizardCore(); }
+        finally { _setupRunning = false; }
+    }
+
+    private async System.Threading.Tasks.Task RunDeviceSetupWizardCore()
     {
         var endpoints = Core.SystemIntegrations.DeviceSetup.VacRenderEndpoints();
         string? driverLog = null;
 
-        // ---- Phase 0: no VAC devices at all → offer to install the driver from the user's own package
+        using var progress = new SetupProgressDialog();
+
+        // ---- Phase 0: no VAC devices at all → install the driver from the user's own package
         if (endpoints.Count == 0 && !Core.SystemIntegrations.DeviceSetup.VacServicePresent)
         {
             using var pick = new SetupFolderDialog();
             if (pick.ShowDialog(this) != DialogResult.OK) return;
-            driverLog = Core.SystemIntegrations.DeviceSetup.RunElevated(
-                Core.SystemIntegrations.DeviceSetup.BuildDriverInstallScript(pick.InfPath));
 
+            progress.SetStatus("Installing the Virtual Audio Cable driver…\nApprove the administrator prompt.");
+            progress.Show(this);
+            var step = new Progress<string>(s => progress.SetStatus(s));
+            driverLog = await Core.SystemIntegrations.DeviceSetup.RunElevatedAsync(
+                Core.SystemIntegrations.DeviceSetup.BuildDriverInstallScript(pick.InfPath), step);
+
+            progress.SetStatus("Waiting for the new audio devices to appear…");
             // wait for the driver to enumerate (pnputil + bounce can take a while)
             for (int wait = 0; wait < 15 && endpoints.Count == 0; wait++)
             {
@@ -659,46 +676,49 @@ public class MixerForm : Form
         endpoints = Core.SystemIntegrations.DeviceSetup.VacRenderEndpoints();
         if (endpoints.Count == 0)
         {
+            progress.Close();
             MessageBox.Show(this,
                 "No Virtual Audio Cable devices were found.\n\n" +
                 (driverLog is null
                     ? "Install VAC 4.x first (see README), then run this again."
-                    : "Driver install ran, but no devices appeared yet. A reboot usually completes it — then SONO will pick the devices up automatically."),
+                    : "Driver install ran, but no devices appeared.\n\nSetup log:\n" + driverLog.Replace("\r\n", "\n")),
                 "SONO Mixer — setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
+
+        progress.SetStatus($"Configuring {endpoints.Count} device(s) — naming channels SONO - Game / Chat / Media / Aux…\nApprove the administrator prompt.");
+        progress.Show(this);
+        var step2 = new Progress<string>(s => progress.SetStatus(s));
+
         if (endpoints.Count < 4)
-            MessageBox.Show(this,
-                $"Only {endpoints.Count} VAC device(s) found — 4 expected. Setup will rename what exists; set the cable count to 4 in the VAC Control Panel for full channels.",
-                "SONO Mixer — setup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            driverLog += $"\nOnly {endpoints.Count} VAC device(s) found — 4 expected. Cable count will be set to 4 by setup.";
 
         var script = Core.SystemIntegrations.DeviceSetup.BuildScript(endpoints);
         string log;
-        try { log = Core.SystemIntegrations.DeviceSetup.RunElevated(script); }
+        try { log = await Core.SystemIntegrations.DeviceSetup.RunElevatedAsync(script, step2); }
         catch (Exception ex)
         {
+            progress.Close();
             MessageBox.Show(this, $"Setup was cancelled or failed: {ex.Message}", "SONO Mixer — setup",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
+        progress.SetStatus("Almost done — restarting the devices…");
         // wait a moment for the device bounce to re-enumerate, then re-resolve
-        var done = new System.Windows.Forms.Timer { Interval = 4500 };
-        done.Tick += (_, _) =>
-        {
-            done.Stop();
-            done.Dispose();
-            ResolveDeviceMappings();
-            _routing.Rebuild(_settings.RealOutputId);
-            UpdateOutputButtonLabel();
-            var ok = log.Contains(": OK");
-            MessageBox.Show(this,
-                (ok ? "Device setup finished.\n\n" : "Setup finished with some errors.\n\n") +
-                log.Replace("\r\n", "\n"),
-                "SONO Mixer — setup", MessageBoxButtons.OK,
-                ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
-        };
-        done.Start();
+        await Task.Delay(4500);
+        progress.Close();
+
+        ResolveDeviceMappings();
+        _routing.Rebuild(_settings.RealOutputId);
+        UpdateOutputButtonLabel();
+        var ok = log.Contains(": OK") || (driverLog is not null && driverLog.Contains("device node created"));
+        MessageBox.Show(this,
+            (ok ? "Device setup finished.\n\n" : "Setup finished with some errors.\n\n") +
+            ((driverLog is not null ? "[driver install]\n" + driverLog.Replace("\r\n", "\n") + "\n\n" : "") +
+            (log.Length > 0 ? "[device naming]\n" + log.Replace("\r\n", "\n") : "")),
+            "SONO Mixer — setup", MessageBoxButtons.OK,
+            ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
     }
 
     /// <summary>Wide window → 4 columns; narrow/square → 2×2, so cards never get cramped.</summary>

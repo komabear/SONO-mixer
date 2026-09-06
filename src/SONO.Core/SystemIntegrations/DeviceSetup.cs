@@ -99,6 +99,7 @@ reg add ""HKLM\SYSTEM\CurrentControlSet\Services\VirtualAudioCable_{VacServiceGu
         sb.AppendLine(@"$src = @'
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 public static class DevCon
 {
@@ -110,6 +111,11 @@ public static class DevCon
         public uint DevInst;
         public IntPtr Reserved;
     }
+
+    [DllImport(""setupapi.dll"", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool SetupDiGetINFClass(
+        string infName, ref Guid classGuid, StringBuilder className,
+        int classNameSize, out int requiredSize);
 
     [DllImport(""setupapi.dll"", SetLastError = true, CharSet = CharSet.Unicode)]
     static extern IntPtr SetupDiCreateDeviceInfoList(ref Guid classGuid, IntPtr hwndParent);
@@ -142,20 +148,57 @@ public static class DevCon
     const uint INSTALLFLAG_FORCE = 0x00000001;
     static readonly Guid MediaClass = new Guid(""4d36e96c-e325-11ce-bfc1-08002be10318"");
 
+    public static string Hex(int e) { return ""0x"" + (e & 0xFFFFFFFF).ToString(""X8""); }
+
     public static string Install(string hwid, string infPath)
     {
-        // C# 5/PnP: static readonly fields cannot be passed by ref — copy to locals
-        Guid mediaClass = MediaClass;
-        IntPtr list = SetupDiCreateDeviceInfoList(ref mediaClass, IntPtr.Zero);
+        string[] problems = new string[0];
+
+        // Form 1 (devcon-style, StackOverflow-proven): class from INF, full instance id, flags 0
+        Guid infClass = Guid.Empty;
+        StringBuilder cn = new StringBuilder(256);
+        int req;
+        bool haveInfClass = SetupDiGetINFClass(infPath, ref infClass, cn, cn.Capacity, out req);
+        if (!haveInfClass)
+            problems = append(problems, ""GetINFClass: "" + Hex(Marshal.GetLastWin32Error()));
+
+        // 1a: INF class + full instance id, flags 0
+        string r1 = haveInfClass ? TryCreate(infClass, ""ROOT\\{" + VacServiceGuid + @"}\\0000"", 0, hwid, infPath)
+                                 : ""skipped"";
+        if (r1 == null) return ""device node created (form 1a: INF class, full id)"";
+
+        // 1b: INF class + bare device id, DICD_GENERATE_ID
+        string r1b = haveInfClass ? TryCreate(infClass, ""{" + VacServiceGuid + @"}"", DICD_GENERATE_ID, hwid, infPath)
+                                  : ""skipped"";
+        if (r1b == null) return ""device node created (form 1b: INF class, generated id)"";
+
+        // 1c: MEDIA class + bare id, DICD_GENERATE_ID (original attempt)
+        Guid media = new Guid(""4d36e96c-e325-11ce-bfc1-08002be10318"");
+        string r1c = TryCreate(media, ""{" + VacServiceGuid + @"}"", DICD_GENERATE_ID, hwid, infPath);
+        if (r1c == null) return ""device node created (form 1c: MEDIA class, generated id)"";
+
+        // 1d: MEDIA class + full instance id, flags 0
+        string r1d = TryCreate(media, ""ROOT\\{" + VacServiceGuid + @"}\\0000"", 0, hwid, infPath);
+        if (r1d == null) return ""device node created (form 1d: MEDIA class, full id)"";
+
+        return ""all forms failed. "" + problems[0] + "" | 1a: "" + r1 + "" | 1b: "" + r1b + "" | 1c: "" + r1c + "" | 1d: "" + r1d;
+    }
+
+    static string[] append(string[] arr, string s) { string[] n = new string[arr.Length + 1]; arr.CopyTo(n, 0); n[arr.Length] = s; return n; }
+
+    // returns null on success, else the error string of the deepest failed step
+    static string TryCreate(Guid classGuid, string deviceName, uint flags, string hwid, string infPath)
+    {
+        Guid g = classGuid;
+        IntPtr list = SetupDiCreateDeviceInfoList(ref g, IntPtr.Zero);
         if (list == new IntPtr(-1) || list == IntPtr.Zero)
-            return ""SetupDiCreateDeviceInfoList failed: "" + Marshal.GetLastWin32Error();
+            return ""List("" + deviceName + ""): "" + Hex(Marshal.GetLastWin32Error());
         try
         {
             SP_DEVINFO_DATA dev = new SP_DEVINFO_DATA();
             dev.cbSize = Marshal.SizeOf(typeof(SP_DEVINFO_DATA));
-            if (!SetupDiCreateDeviceInfo(list, ""ROOT\\{" + VacServiceGuid + @"}\\0000"", mediaClass,
-                    ""Virtual Audio Cable 4"", IntPtr.Zero, DICD_GENERATE_ID, out dev))
-                return ""SetupDiCreateDeviceInfo failed: "" + Marshal.GetLastWin32Error();
+            if (!SetupDiCreateDeviceInfo(list, deviceName, g, ""Virtual Audio Cable 4"", IntPtr.Zero, flags, out dev))
+                return ""Create("" + deviceName + ""): "" + Hex(Marshal.GetLastWin32Error());
 
             byte[] hwidBytes = System.Text.Encoding.Unicode.GetBytes(hwid + ""\0\0"");
             if (!SetupDiSetDeviceRegistryProperty(list, ref dev, SPDRP_HARDWAREID,
@@ -280,14 +323,17 @@ reg add ""HKLM\SYSTEM\CurrentControlSet\Services\VirtualAudioCable_" + VacServic
         return sb.ToString();
     }
 
-    /// <summary>Write + run the script elevated, wait, and return the log text.</summary>
-    public static string RunElevated(string script)
+    /// <summary>Write + run the script elevated (hidden console; callers show their own progress
+    /// UI), wait, and return the log text.</summary>
+    public static System.Threading.Tasks.Task<string> RunElevatedAsync(
+        string script, IProgress<string>? progress = null)
     {
         var scriptPath = Path.Combine(Path.GetTempPath(), "sono_setup.ps1");
         File.WriteAllText(scriptPath, script);
         var logPath = Path.Combine(Path.GetTempPath(), "sono_setup.log");
         try { File.Delete(logPath); } catch { }
 
+        progress?.Report("Requesting administrator rights…");
         var psi = new System.Diagnostics.ProcessStartInfo
         {
             FileName = "powershell.exe",
@@ -296,8 +342,14 @@ reg add ""HKLM\SYSTEM\CurrentControlSet\Services\VirtualAudioCable_" + VacServic
             UseShellExecute = true,
             WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
         };
-        using var p = System.Diagnostics.Process.Start(psi)!;
-        p.WaitForExit(120_000);
-        try { return File.ReadAllText(logPath); } catch { return "(no log produced)"; }
+
+        return System.Threading.Tasks.Task.Run(() =>
+        {
+            using var p = System.Diagnostics.Process.Start(psi)!;
+            // stream-ish progress while the elevated process runs
+            while (!p.WaitForExit(500))
+                progress?.Report("Working — installing and configuring devices… (audio may briefly stop)");
+            try { return File.ReadAllText(logPath); } catch { return "(no log produced)"; }
+        });
     }
 }
