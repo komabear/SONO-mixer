@@ -634,13 +634,35 @@ public class MixerForm : Form
     }
 
     /// <summary>One-elevation setup: cables=4, endpoint renames, device bounce. Reports per-step results.</summary>
-    private void RunDeviceSetupWizard()
+    private async void RunDeviceSetupWizard()
     {
         var endpoints = Core.SystemIntegrations.DeviceSetup.VacRenderEndpoints();
+        string? driverLog = null;
+
+        // ---- Phase 0: no VAC devices at all → offer to install the driver from the user's own package
+        if (endpoints.Count == 0 && !Core.SystemIntegrations.DeviceSetup.VacServicePresent)
+        {
+            using var pick = new SetupFolderDialog();
+            if (pick.ShowDialog(this) != DialogResult.OK) return;
+            driverLog = Core.SystemIntegrations.DeviceSetup.RunElevated(
+                Core.SystemIntegrations.DeviceSetup.BuildDriverInstallScript(pick.InfPath));
+
+            // wait for the driver to enumerate (pnputil + bounce can take a while)
+            for (int wait = 0; wait < 15 && endpoints.Count == 0; wait++)
+            {
+                await Task.Delay(1000);
+                endpoints = Core.SystemIntegrations.DeviceSetup.VacRenderEndpoints();
+            }
+        }
+
+        endpoints = Core.SystemIntegrations.DeviceSetup.VacRenderEndpoints();
         if (endpoints.Count == 0)
         {
             MessageBox.Show(this,
-                "No Virtual Audio Cable devices were found.\n\nInstall VAC 4.x first (see README), then run this again.",
+                "No Virtual Audio Cable devices were found.\n\n" +
+                (driverLog is null
+                    ? "Install VAC 4.x first (see README), then run this again."
+                    : "Driver install ran, but no devices appeared yet. A reboot usually completes it — then SONO will pick the devices up automatically."),
                 "SONO Mixer — setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }

@@ -14,6 +14,9 @@ public static class DeviceSetup
 
     public sealed record EndpointInfo(string Id, string FriendlyName);
 
+    public sealed record VacPackageValidation(
+        bool Valid, string InfPath, List<string> Found, List<string> Missing, string Details);
+
     /// <summary>VAC render endpoints found on the system ("Line N (Virtual Audio Cable)").</summary>
     public static List<EndpointInfo> VacRenderEndpoints()
     {
@@ -38,6 +41,66 @@ public static class DeviceSetup
                 .Any(d => d.FriendlyName.StartsWith("SONO - ", StringComparison.OrdinalIgnoreCase));
         }
         catch { return false; }
+    }
+
+    /// <summary>Validate a user-supplied VAC distribution folder (e.g. "…\Virtual Audio Cable 4.70").
+    /// Accepts the standard package layout (INF at root or inside x64\). We never bundle VAC —
+    /// the user supplies their own lawfully obtained copy and SONO installs from it.</summary>
+    public static VacPackageValidation ValidateVacPackage(string dir)
+    {
+        var found = new List<string>();
+        var missing = new List<string>();
+
+        if (!Directory.Exists(dir))
+            return new VacPackageValidation(false, "", found, new List<string> { "folder does not exist" },
+                $"Folder not found:\n{dir}");
+
+        string? inf = null, sys = null, cat = null;
+
+        foreach (var cand in new[] { "vrtaucbl.inf", Path.Combine("x64", "vrtaucbl.inf"), Path.Combine("x86", "vrtaucbl.inf") })
+            if (File.Exists(Path.Combine(dir, cand))) { inf = Path.Combine(dir, cand); break; }
+        foreach (var cand in new[] { Path.Combine("x64", "vrtaucbl.sys"), "vrtaucbl.sys" })
+            if (File.Exists(Path.Combine(dir, cand))) { sys = Path.Combine(dir, cand); break; }
+        foreach (var cand in new[] { "vrtaucbl.cat", "vrtaucbl6x.cat", Path.Combine("x64", "vrtaucbl.cat") })
+            if (File.Exists(Path.Combine(dir, cand))) { cat = Path.Combine(dir, cand); break; }
+
+        if (inf is not null) found.Add(inf); else missing.Add("vrtaucbl.inf (driver INF)");
+        if (sys is not null) found.Add(sys); else missing.Add("x64\\vrtaucbl.sys (driver binary)");
+        if (cat is not null) found.Add(cat); else missing.Add("vrtaucbl*.cat (signature catalog)");
+
+        var details = missing.Count == 0
+            ? $"VAC package OK:\n  {inf}\n  {sys}\n  {cat}"
+            : "Missing required files:\n  " + string.Join("\n  ", missing) +
+              "\n\nPoint this at the unpacked Virtual Audio Cable 4.x distribution folder\n" +
+              "(it must contain vrtaucbl.inf and an x64\\vrtaucbl.sys).";
+        return new VacPackageValidation(missing.Count == 0, inf ?? "", found, missing, details);
+    }
+
+    /// <summary>Elevated phase-1 script for a FRESH install: stage the driver from the user's
+    /// package (pnputil), set 4 cables, bounce. Endpoint renames happen in phase 2 once the
+    /// new endpoints exist (BuildScript).</summary>
+    public static string BuildDriverInstallScript(string infFullPath)
+    {
+        return $@"$ErrorActionPreference = 'Continue'
+$log = Join-Path $env:LOCALAPPDATA 'Temp\sono_setup.log'
+'=== SONO driver install ===' | Out-File $log
+
+pnputil /add-driver ""{infFullPath}"" /install 2>&1 | Out-File $log -Append
+
+reg add ""HKLM\SOFTWARE\EuMus Design\Virtual Audio Cable\4"" /v ""Number of cables"" /t REG_DWORD /d 4 /f | Out-Null
+reg add ""HKLM\SYSTEM\CurrentControlSet\Services\VirtualAudioCable_{VacServiceGuid}\Parameters"" /v ""Number of cables"" /t REG_DWORD /d 4 /f | Out-Null
+'cable count set to 4' | Out-File $log -Append
+
+try {{
+  $d = Get-PnpDevice | Where-Object {{ $_.InstanceId -like 'ROOT\{{{VacServiceGuid}*' }} | Select-Object -First 1
+  if ($d) {{
+    Disable-PnpDevice -InstanceId $d.InstanceId -Confirm:$false
+    Start-Sleep 2
+    Enable-PnpDevice -InstanceId $d.InstanceId -Confirm:$false
+    'device bounced' | Out-File $log -Append
+  }} else {{ 'no device node yet (will appear on first use)' | Out-File $log -Append }}
+}} catch {{ ('bounce failed: ' + $_.Exception.Message) | Out-File $log -Append }}
+'=== DONE ===' | Out-File $log -Append";
     }
 
     private static readonly string[] ChannelNames = { "Game", "Chat", "Media", "Aux" };

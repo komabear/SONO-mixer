@@ -57,8 +57,13 @@ lives in the tray when closed.
 
 ## One-time setup (per machine)
 
-**1. Install Virtual Audio Cable** — run its installer (administrator). A reboot is
-recommended after install.
+**1. Install Virtual Audio Cable** — SONO does not bundle VAC; each user uses their own
+copy (free Trial works for testing; the full version removes the trial voice reminder,
+$30–50 one-time). On first run (or via ⚙ → *Run automatic device setup…*), SONO asks for
+the **unpacked VAC 4.x folder** (e.g. `D:\Downloads\Virtual Audio Cable 4.70`), validates
+it (`vrtaucbl.inf`, `x64\vrtaucbl.sys`, signature catalog), and — after one administrator
+approval — stages the driver (`pnputil`), sets **4 cables**, and re-enumerates.
+A reboot is recommended after a fresh driver install.
 
 **2. Set the cable count to 4.** Either via the VAC Control Panel (`Cables = 4`, Set) or by
 writing the registry value used by SONO's own setup path:

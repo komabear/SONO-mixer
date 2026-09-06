@@ -63,6 +63,57 @@ if (args.Length == 2 && args[0] == "tonedefault")
     return;
 }
 
+if (args.Length == 2 && args[0] == "mute")
+{
+    // mute/unmute every session of the given pid on every device
+    uint pid = uint.Parse(args[1]);
+    foreach (var d in en.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
+    {
+        try
+        {
+            var muteCol = d.AudioSessionManager.Sessions;
+            for (int i = 0; i < muteCol.Count; i++)
+            {
+                if (muteCol[i].GetProcessID == pid)
+                {
+                    muteCol[i].SimpleAudioVolume.Mute = true;
+                    muteCol[i].SimpleAudioVolume.Volume = 0f;
+                    Console.WriteLine($"muted pid {pid} on {d.FriendlyName}");
+                }
+            }
+        }
+        catch { }
+    }
+    return;
+}
+
+if (args.Length == 3 && args[0] == "plooptest")
+{
+    // capture the given process's audio via PROCESS loopback and print the peak
+    uint pid = uint.Parse(args[1]);
+    float max = 0;
+#pragma warning disable CS0618
+    var rec = await new WasapiRecorderBuilder()
+        .WithProcessLoopback(pid, ProcessLoopbackMode.ExcludeTargetProcessTree)
+        .WithSharedMode()
+        .BuildAsync();
+#pragma warning restore CS0618
+    rec.DataAvailable += (ReadOnlySpan<byte> data, AudioClientBufferFlags f, long p, long q) =>
+    {
+        for (int i = 0; i + 4 <= data.Length; i += 4)
+        {
+            float v = MathF.Abs(System.Runtime.InteropServices.MemoryMarshal.Read<float>(data.Slice(i)));
+            if (v > max) max = v;
+        }
+    };
+    rec.StartRecording();
+    Console.WriteLine($"capturing pid {pid}…");
+    await Task.Delay(int.Parse(args[2]) * 1000);
+    rec.StopRecording();
+    Console.WriteLine($"process-loopback peak={max:0.000}");
+    return;
+}
+
 if (args.Length == 3 && args[0] == "tone")
 {
     var dev = en.GetDevice(args[1]);
