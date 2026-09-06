@@ -1,4 +1,5 @@
-# SONO Mixer
+<img width="1024" height="494" alt="image" src="https://github.com/user-attachments/assets/82d610fb-a374-4421-b5bd-e3221a277730" />
+
 
 A lightweight SteelSeries-Sonar-style audio mixer for Windows. While SONO runs, each of its
 four channels — **Game / Chat / Media / Aux** — acts on its own virtual output device in
@@ -14,7 +15,7 @@ Built with C# / WinForms / NAudio (WASAPI).
 YouTube Music ──▶ SONO - Media ─┐
 Discord ────────▶ SONO - Chat ──┤  (per-channel volume/mute/hotkeys)
 game.exe ───────▶ SONO - Game ──┤
-                                └──▶ SONO Mixer ──▶ Fones de ouvido (your real output)
+                                └──▶ SONO Mixer ──▶ Headphones / Speakers (your real output)
 unassigned apps ──────────────────────────────────────────────▶ play directly (Windows default)
 ```
 
