@@ -253,6 +253,8 @@ public class ChannelCard : Control
             .Height = _compact ? 0 : HotkeyRowH * 3 + 22;
     }
 
+    private string? _lastGearTip;
+
     /// <summary>Periodic refresh from the engine snapshot.</summary>
     public void Update(IReadOnlyList<SessionView> owned, string? hotkeyError)
     {
@@ -260,7 +262,12 @@ public class ChannelCard : Control
         UpdateMute();
         _name.Text = _def.Name;
         _slider.Fill = ColorOf(_def);
-        Tips.SetToolTip(_gear, string.IsNullOrWhiteSpace(hotkeyError) ? "Channel settings" : "⚠ " + hotkeyError);
+        string tip = string.IsNullOrWhiteSpace(hotkeyError) ? "Channel settings" : "⚠ " + hotkeyError;
+        if (tip != _lastGearTip)
+        {
+            Tips.SetToolTip(_gear, tip);   // SetToolTip is a window message — don't churn it every tick
+            _lastGearTip = tip;
+        }
         DiffChips(owned);
     }
 
