@@ -8,7 +8,7 @@
 
 #define MyAppName "SONO Mixer"
 #define MyAppVersion "0.5.0"
-#define MyAppPublisher "AndreYin"
+#define MyAppPublisher "komabear"
 #define MyAppExeName "SONO.App.exe"
 
 [Setup]
