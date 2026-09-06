@@ -13,41 +13,6 @@ public class MixerForm : Form
     private readonly RoutingHealthMonitor _health = new();
     private readonly OsdWindow _osd = new();
     private readonly NotifyIcon _tray;
-
-    /// <summary>Composition only takes effect while a resize is in flight: children are drawn
-    /// off-screen and blitted as one surface (no intermediate repaints/ghosting), then normal
-    /// per-control painting resumes for interactivity. Enabled for the whole form tree.</summary>
-    private bool _compositedDuringResize;
-    protected override CreateParams CreateParams
-    {
-        get
-        {
-            var cp = base.CreateParams;
-            if (_compositedDuringResize) cp.ExStyle |= 0x02000000;   // WS_EX_COMPOSITED
-            return cp;
-        }
-    }
-
-    protected override void OnResizeBegin(EventArgs e)
-    {
-        if (!_compositedDuringResize)
-        {
-            _compositedDuringResize = true;
-            RecreateHandle();          // applies WS_EX_COMPOSITED atomically for the whole tree
-        }
-        base.OnResizeBegin(e);
-    }
-
-    protected override void OnResizeEnd(EventArgs e)
-    {
-        base.OnResizeEnd(e);
-        if (_compositedDuringResize)
-        {
-            _compositedDuringResize = false;
-            RecreateHandle();          // back to fast interactive painting
-        }
-    }
-
     private readonly System.Windows.Forms.Timer _reconcileDebounce;
     private readonly Dictionary<string, ChannelCard> _cards = new();
     private readonly Dictionary<string, Panel> _appRows = new(StringComparer.OrdinalIgnoreCase);
@@ -1022,13 +987,6 @@ public class MixerForm : Form
     {
         base.OnLoad(e);
         _engine.Tick += EngineTickHandler;
-
-        // enable double buffering at the WinForms level for the form AND all children:
-        // each child gets an off-screen buffer so resize repaints never flash
-        // (per-control OptimizedDoubleBuffer alone doesn't cover layout-time repaints)
-        typeof(Control).GetProperty("DoubleBuffered",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .SetValue(this, true);
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
