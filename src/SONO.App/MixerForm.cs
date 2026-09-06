@@ -363,18 +363,17 @@ public class MixerForm : Form
 
     private static Icon MakeIcon()
     {
-        using var bmp = new Bitmap(32, 32);
-        using (var g = Graphics.FromImage(bmp))
+        // use the app's embedded multi-size icon (pink audio cable) — the exe carries
+        // it via <ApplicationIcon>; extract the size Windows needs, no runtime drawing
+        try
         {
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            g.Clear(Theme.Bg);
-            int[] xs = { 6, 14, 22 };
-            int[] hs = { 12, 20, 9 };
-            for (int i = 0; i < 3; i++)
-                using (var b = new SolidBrush(Theme.Accent))
-                    g.FillRectangle(b, xs[i], 16 - hs[i] / 2, 4, hs[i]);
+            return Icon.ExtractAssociatedIcon(Application.ExecutablePath)
+                   ?? System.Drawing.SystemIcons.Application;
         }
-        return Icon.FromHandle(bmp.GetHicon());
+        catch
+        {
+            return System.Drawing.SystemIcons.Application;
+        }
     }
 
     // ---------- cards ----------
