@@ -21,6 +21,7 @@ public sealed class SetupProgressDialog : Form
         StartPosition = FormStartPosition.CenterParent;
         ClientSize = new Size(470, 168);
         BackColor = theme.Card;
+        TitleBarTheme.Apply(this);
 
         var title = new Label
         {

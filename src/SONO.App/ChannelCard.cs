@@ -371,6 +371,7 @@ internal static class PromptDialog
             ShowIcon = false,
             BackColor = Theme.Card,
         };
+        TitleBarTheme.Apply(form);
         var box = new TextBox
         {
             Left = 14, Top = 16, Width = 292,

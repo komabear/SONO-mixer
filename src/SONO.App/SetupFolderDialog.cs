@@ -27,8 +27,9 @@ public sealed class SetupFolderDialog : Form
         MaximizeBox = MinimizeBox = false;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(560, 178);
+        ClientSize = new Size(560, 208);
         BackColor = theme.Card;
+        TitleBarTheme.Apply(this);
 
         var title = new Label
         {

@@ -55,6 +55,7 @@ public class MixerForm : Form
         Font = new Font("Segoe UI", 9.5f);
         KeyPreview = false;
         Icon = MakeIcon();
+        TitleBarTheme.Apply(this);
 
         // ---- left: channel tracks ----
         // ---- left: channel tracks (responsive grid: 4-up when wide, 2×2 when narrow) ----
@@ -457,6 +458,7 @@ public class MixerForm : Form
             ShowIcon = false,
             BackColor = Theme.Card,
         };
+        TitleBarTheme.Apply(pick);
         var combo = new DarkComboBox { Left = 14, Top = 16, Width = 312 };
         combo.Items.AddRange(choices.ToArray());
         combo.SelectedIndex = 0;
