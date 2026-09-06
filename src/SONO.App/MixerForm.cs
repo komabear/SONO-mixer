@@ -11,6 +11,7 @@ public class MixerForm : Form
     private readonly HotkeyManager _hotkeys;
     private readonly AppSettings _settings;
     private readonly RoutingHealthMonitor _health = new();
+    private readonly OsdWindow _osd = new();
     private readonly NotifyIcon _tray;
     private readonly System.Windows.Forms.Timer _reconcileDebounce;
     private readonly Dictionary<string, ChannelCard> _cards = new();
@@ -60,6 +61,8 @@ public class MixerForm : Form
         KeyPreview = false;
         Icon = MakeIcon();
         TitleBarTheme.Apply(this);
+        _osd.AnchorProvider = () => { lock (_settings) return _settings.OsdAnchor; };
+        _osd.PositionAtAnchorPublic();
 
         // ---- left: channel tracks ----
         // ---- left: channel tracks (responsive grid: 4-up when wide, 2×2 when narrow) ----
@@ -149,9 +152,29 @@ public class MixerForm : Form
             };
             miTheme.DropDownItems.Add(item);
         }
+        var miOsd = new ToolStripMenuItem("Volume popup position");
+        foreach (var (label, id) in new[]
+        {
+            ("Off", "off"),
+            ("Top left", "top-left"), ("Top", "top"), ("Top right", "top-right"),
+            ("Left", "left"), ("Center", "center"), ("Right", "right"),
+            ("Bottom left", "bottom-left"), ("Bottom", "bottom"), ("Bottom right", "bottom-right"),
+        })
+        {
+            var captured = id;
+            var item = new ToolStripMenuItem(label) { Checked = _settings.OsdAnchor == id };
+            item.Click += (_, _) =>
+            {
+                _settings.OsdAnchor = captured;
+                Save();
+                foreach (ToolStripMenuItem other in miOsd.DropDownItems) other.Checked = false;
+                item.Checked = true;
+            };
+            miOsd.DropDownItems.Add(item);
+        }
         var miSetup = new ToolStripMenuItem("Run automatic device setup…");
         miSetup.Click += (_, _) => RunDeviceSetupWizard();
-        settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep, miTheme, miSetup });
+        settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep, miOsd, miTheme, miSetup });
         settingsBtn.Click += (_, _) => settingsMenu.Show(settingsBtn, new Point(0, settingsBtn.Height));
 
         // ---- OUTPUT: field-styled button opening a fully themed dropdown (no native combo popup) ----
@@ -896,6 +919,7 @@ public class MixerForm : Form
         _engine.ReconcileNow();
         RefreshRoutingVolumes();
         if (_last is not null) UpdateCards(_last);
+        if (_settings.OsdAnchor != "off") _osd.Notify(def);
     }
 
     // ---------- misc ----------
