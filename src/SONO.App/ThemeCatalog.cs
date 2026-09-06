@@ -18,8 +18,9 @@ public sealed class ThemeDef
     public Color Accent { get; init; }
     public Color Danger { get; init; }
     public string[] Palette { get; init; } = [];
-    /// <summary>Optional mascot image (relative to app base dir) shown on the Applications panel.</summary>
-    public string? ImagePath { get; init; }
+    /// <summary>Optional mascot image (relative to app base dir) shown on the Applications panel.
+    /// Default: the SONO Mixer logo — every theme gets it; individual themes (Miku) override.</summary>
+    public string ImagePath { get; init; } = @"Assets\logo.png";
 }
 
 /// <summary>Live theme: static delegating properties keep every existing `Theme.X` call site working.</summary>
@@ -148,7 +149,7 @@ public static class ThemeCatalog
             Text = Color.FromArgb(0xbe, 0xc8, 0xd1), Muted = Color.FromArgb(0x8b, 0x97, 0x9e),
             Accent = Color.FromArgb(0x86, 0xce, 0xcb), Danger = Color.FromArgb(0xe1, 0x28, 0x85),
             Palette = new[] { "#86CECB", "#137A7F", "#BEC8D1", "#E12885", "#5B8FA8", "#7DE8DD", "#9FB4BD", "#4FC1E9" },
-            ImagePath = @"Assets\miku.png",
+            ImagePath = @"Assets\logo-miku.png",
         },
     };
 
