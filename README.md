@@ -35,9 +35,10 @@ unassigned apps ─────────────────────�
 ## Requirements
 
 - Windows 10 2004+ / Windows 11 (x64)
-- [**Virtual Audio Cable 4.x**](https://vac.muzychenko.net/en/) — a third-party driver that
-  provides the virtual devices. It is **not included** in this repository (see Licensing).
-  You only need the **downloaded package** — SONO's wizard installs and configures it.
+- [**Virtual Audio Cable 4.x (full version, license required)**](https://vac.muzychenko.net/en/purchase.htm) —
+  a third-party driver that provides the virtual devices. It is **not included** in this
+  repository (see Licensing). You only need the **downloaded full-package folder** —
+  SONO's wizard installs and configures it.
 - To **run the release installer**: nothing else (self-contained).
 - To **build from source**: the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
@@ -50,14 +51,30 @@ Download `SONO-Setup.exe` from [Releases](https://github.com/komabear/sono-mixer
 Start-Menu shortcuts and an optional desktop icon. SONO starts with Windows and lives in
 the tray by default.
 
-### 2. Let SONO install & configure Virtual Audio Cable
+### 2. Buy a Virtual Audio Cable license
+
+SONO needs the **full version** of [Virtual Audio Cable](https://vac.muzychenko.net/en/) —
+the free trial only provides **1 cable**, and SONO requires **4** (Game / Chat / Media / Aux).
+Purchase a license at the
+[official purchase page](https://vac.muzychenko.net/en/purchase.htm):
+
+- **Home license ($30)** — enough for personal use, "not associated with income generation"
+- **Business license ($50)** — if you use it commercially
+
+The license is **one-time and perpetual** — no subscription. Volume discounts exist
+(2+ licenses), plus 30–50% discounts for students and educational/non-profit
+organizations. After purchase you'll get download instructions for the **full** package
+(file name ends with `full`, e.g. `vac464full`) — that's the folder you'll point SONO at
+in the next step.
+
+### 3. Let SONO install & configure Virtual Audio Cable
 
 SONO does **not** bundle VAC — it uses **your own downloaded copy**. On first launch a
 wizard appears:
 
 1. Click **Yes** when offered the automatic device setup (or later: ⚙ →
    *Run automatic device setup…*)
-2. Point the wizard at your **unpacked VAC 4.x folder** (e.g.
+2. Point the wizard at your **unpacked VAC 4.x full-package folder** (e.g.
    `D:\Downloads\Virtual Audio Cable 4.70`). *Install* unlocks only after validation
    (`vrtaucbl.inf`, `x64\vrtaucbl.sys`, signature catalog).
 3. Approve the administrator prompt. The wizard then:
@@ -71,7 +88,7 @@ wizard appears:
 A progress dialog narrates each step; a summary dialog shows the log at the end.
 A reboot after the very first driver install is recommended.
 
-### 3. Assign apps to channels (one-time, per app)
+### 4. Assign apps to channels (one-time, per app)
 
 Windows decides where each app plays — no API exists to change it from software, so this
 is the one manual step:
@@ -85,7 +102,7 @@ is the one manual step:
 SONO's status bar warns `⚠ N app(s) mis-routed` whenever an assigned app is on the wrong
 device — click it to see which.
 
-### 4. Mix
+### 5. Mix
 
 - **Sliders / mute** per channel; per-app faders live in the Applications panel
 - **Global hotkeys**: click a shortcut box on a channel card, press any combo
@@ -133,7 +150,7 @@ choices become harmless "missing device" entries that Windows cleans up on its o
 ## Licensing notes
 
 - This repository contains **no VAC binaries or license files**. Virtual Audio Cable is a
-  commercial product by EuMus Design; each user supplies their own copy (a feature-limited
-  free tier exists; the full tier removes the trial voice reminder, $30–50 one-time). SONO
-  never distributes VAC — it only installs **from the user's own package**.
+  commercial product by EuMus Design; each user purchases their own license
+  ([purchase page](https://vac.muzychenko.net/en/purchase.htm) — Home $30 / Business $50,
+  one-time). SONO never distributes VAC — it only installs **from the user's own package**.
 - The Hatsune Miku artwork is fan art, included for personal use.
