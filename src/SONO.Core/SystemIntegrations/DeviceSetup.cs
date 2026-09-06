@@ -17,7 +17,13 @@ public static class DeviceSetup
     public sealed record VacPackageValidation(
         bool Valid, string InfPath, List<string> Found, List<string> Missing, string Details);
 
-    /// <summary>VAC render endpoints found on the system ("Line N (Virtual Audio Cable)").</summary>
+    /// <summary>VAC render endpoints found on the system ("Line N (Virtual Audio Cable)").
+    /// Ordered by CABLE NUMBER (parsed from "Line N"), NOT alphabetically — the rename
+    /// mapping must be Line 1→Game, Line 2→Chat, Line 3→Media, Line 4→Aux. Alphabetical
+    /// order scrambles it ("Line 1, Line 2, Line 3, Line 4" sorts as 1,2,3,4 fine, but a
+    /// fresh system enumerates in creation order which may differ from name order, and
+    /// alphabetical sorting of names containing numbers 10+ breaks entirely). Cable number
+    /// is the only stable mapping key.</summary>
     public static List<EndpointInfo> VacRenderEndpoints()
     {
         try
@@ -26,10 +32,18 @@ public static class DeviceSetup
                 .EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
                 .Where(d => d.FriendlyName.Contains("Virtual Audio Cable", StringComparison.OrdinalIgnoreCase))
                 .Select(d => new EndpointInfo(d.ID, d.FriendlyName))
-                .OrderBy(d => d.FriendlyName, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(d => LineNumberOf(d.FriendlyName))
+                .ThenBy(d => d.FriendlyName, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
         catch { return new(); }
+    }
+
+    /// <summary>Extracts N from "Line N" names; unknown names sort last.</summary>
+    private static int LineNumberOf(string friendlyName)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(friendlyName, @"Line\s+(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return m.Success && int.TryParse(m.Groups[1].Value, out int n) ? n : int.MaxValue;
     }
 
     public static bool SonoEndpointsPresent()
