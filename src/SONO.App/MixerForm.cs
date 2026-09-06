@@ -391,6 +391,15 @@ public class MixerForm : Form
                 Math.Max(screen.Left, screen.Left + (screen.Width - Width) / 2),
                 Math.Max(screen.Top, screen.Top + (screen.Height - Height) / 2));
 
+        // Force a FULL synchronous repaint of the whole tree. After Hide()/Show() the
+        // window manager (komorebi) re-tiles the window around our layout pass, leaving
+        // children with stale/blank surfaces (the "broken layout" screenshots). Refresh()
+        // = Invalidate + synchronous Update for form and every child — one-shot, cheap.
+        PerformLayout();
+        Refresh();
+
+        BeginInvoke(() => Refresh());   // once more after the WM settles the final bounds
+
         BringToFront();
         Activate();
     }
@@ -987,6 +996,12 @@ public class MixerForm : Form
     {
         base.OnLoad(e);
         _engine.Tick += EngineTickHandler;
+
+        // permanent form-level double buffering: safe (no handle recreation), covers
+        // layout-time repaint flashes that per-control OptimizedDoubleBuffer misses
+        typeof(Control).GetProperty("DoubleBuffered",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(this, true);
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
