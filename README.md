@@ -15,15 +15,16 @@ YouTube Music ──▶ SONO - Media ─┐
 Discord ────────▶ SONO - Chat ──┤  (per-channel volume/mute/hotkeys)
 game.exe ───────▶ SONO - Game ──┤
                                 └──▶ SONO Mixer ──▶ Fones de ouvido (your real output)
-unassigned apps ───────────────────────────────────▶ play directly (Windows default)
+unassigned apps ──────────────────────────────────────────────▶ play directly (Windows default)
 ```
 
 - Channels bind to virtual devices **by name** (`SONO - Game`, `SONO - Chat`,
   `SONO - Media`, `SONO - Aux`), so driver reinstalls and device re-enumerations
   don't break the mapping.
-- **Windows default output should stay on your real device** (e.g. your headphones).
-  The SONO devices are destinations for *assigned* apps only — never set one as the
-  Windows default (that would loop audio back into the mixer).
+- The **Windows default output stays on your real device**. After device setup SONO
+  automatically sets `SONO - Game` as default — that's intentional: Game is the
+  catch-all channel for unassigned apps, and the mixer plays the sum out of your real
+  output (pick it in the OUTPUT picker).
 - Windows provides **no API** to set an app's output device programmatically (verified by
   reverse-engineering `AudioSes.dll`; the per-app choices are user-facing settings only).
   That's why the app assignment step is manual — SONO covers everything else, and its
@@ -32,87 +33,106 @@ unassigned apps ─────────────────────�
 
 ## Requirements
 
-- Windows 10 2004+ / Windows 11
-- [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
-  (or build from source — it's self-contained)
+- Windows 10 2004+ / Windows 11 (x64)
 - [**Virtual Audio Cable 4.x**](https://vac.muzychenko.net/en/) — a third-party driver that
   provides the virtual devices. It is **not included** in this repository (see Licensing).
+  You only need the **downloaded package** — SONO's wizard installs and configures it.
+- To **run the release installer**: nothing else (self-contained).
+- To **build from source**: the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
-## Building & running
+## Setup — step by step (fresh machine, ~5 minutes)
+
+### 1. Install SONO Mixer
+
+Download `SONO-Setup.exe` from [Releases](https://github.com/komabear/sono-mixer/releases)
+(or build from source, below) and run it. It installs to `Program Files\SONO Mixer`, adds
+Start-Menu shortcuts and an optional desktop icon. SONO starts with Windows and lives in
+the tray by default.
+
+### 2. Let SONO install & configure Virtual Audio Cable
+
+SONO does **not** bundle VAC — it uses **your own downloaded copy**. On first launch a
+wizard appears:
+
+1. Click **Yes** when offered the automatic device setup (or later: ⚙ →
+   *Run automatic device setup…*)
+2. Point the wizard at your **unpacked VAC 4.x folder** (e.g.
+   `D:\Downloads\Virtual Audio Cable 4.70`). *Install* unlocks only after validation
+   (`vrtaucbl.inf`, `x64\vrtaucbl.sys`, signature catalog).
+3. Approve the administrator prompt. The wizard then:
+   - stages the driver and **creates the virtual device**
+   - sets the cable count to **4**
+   - renames the endpoints to `SONO - Game / Chat / Media / Aux`
+   - **hides the input ("Line N") side** — you only get the 4 outputs
+   - sets **SONO - Game** as the Windows default output
+   - bounces the device so everything takes effect (audio stops for a few seconds — normal)
+
+A progress dialog narrates each step; a summary dialog shows the log at the end.
+A reboot after the very first driver install is recommended.
+
+### 3. Assign apps to channels (one-time, per app)
+
+Windows decides where each app plays — no API exists to change it from software, so this
+is the one manual step:
+
+1. Open **Windows Settings → System → Sound → Volume mixer**
+2. For each app set **Output** to its channel: `Discord → SONO - Chat`,
+   `Spotify/YouTube Music → SONO - Media`, games → `SONO - Game`, …
+3. Done — the choice persists per app. Unassigned apps play on `SONO - Game` (the default
+   channel device) and still get Game's volume/hotkeys.
+
+SONO's status bar warns `⚠ N app(s) mis-routed` whenever an assigned app is on the wrong
+device — click it to see which.
+
+### 4. Mix
+
+- **Sliders / mute** per channel; per-app faders live in the Applications panel
+- **Global hotkeys**: click a shortcut box on a channel card, press any combo
+  (e.g. `Alt+7`) or a bare multimedia key — works system-wide, `✕` clears.
+  Vol− / Vol+ / Mute per channel; step size adjustable (⚙ → *Hotkey volume step…*)
+- **OUTPUT picker** (top of the Applications panel): where the mixed channels play —
+  usually your headphones/speakers
+- **Themes**: ⚙ → *Theme* — a dozen palettes including Hatsune Miku (with her own logo)
+- SONO sits in the tray when closed; *Start with Windows* is on by default
+
+## Building from source
 
 ```
-git clone https://github.com/AndreYin/SONO-Mixer.git
-cd SONO-Mixer
+git clone https://github.com/komabear/sono-mixer.git
+cd sono-mixer
 dotnet build SONO.slnx -c Release
 ```
 
-Then run:
+Executable: `src\SONO.App\bin\Release\net10.0-windows\SONO.App.exe`
+Installer (requires [Inno Setup 6](https://jrsoftware.org/isinfo.php)): compile
+`installer.iss` → `dist\SONO-Setup.exe`.
 
-```
-src\SONO.App\bin\Release\net10.0-windows\SONO.App.exe
-```
+## Uninstalling
 
-First launch: enable **Start with Windows** (⚙ menu) if you want it at boot; the window
-lives in the tray when closed.
-
-## One-time setup (per machine)
-
-**1. Install Virtual Audio Cable** — SONO does not bundle VAC; each user uses their own
-copy (free Trial works for testing; the full version removes the trial voice reminder,
-$30–50 one-time). On first run (or via ⚙ → *Run automatic device setup…*), SONO asks for
-the **unpacked VAC 4.x folder** (e.g. `D:\Downloads\Virtual Audio Cable 4.70`), validates
-it (`vrtaucbl.inf`, `x64\vrtaucbl.sys`, signature catalog), and — after one administrator
-approval — stages the driver (`pnputil`), sets **4 cables**, and re-enumerates.
-A reboot is recommended after a fresh driver install.
-
-**2. Set the cable count to 4.** Either via the VAC Control Panel (`Cables = 4`, Set) or by
-writing the registry value used by SONO's own setup path:
-
-```
-reg add "HKLM\SOFTWARE\EuMus Design\Virtual Audio Cable\4" /v "Number of cables" /t REG_DWORD /d 4 /f
-reg add "HKLM\SYSTEM\CurrentControlSet\Services\VirtualAudioCable_83ed7f0e-2028-4956-b0b4-39c76fdaef1d\Parameters" /v "Number of cables" /t REG_DWORD /d 4 /f
-```
-
-then bounce the VAC device (Device Manager → disable/enable "Virtual Audio Cable") or reboot.
-
-**3. Rename the four render endpoints** to `SONO - Game`, `SONO - Chat`, `SONO - Media`,
-`SONO - Aux`. Their names live in the registry (Settings' "rename" UI doesn't exist for
-these); each endpoint's key is
-`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render\{guid}\Properties`
-— set values `{a45c254e-df1c-4efd-8020-67d146a850e0},2` and `...,14` to the name. These keys
-are ACL-protected: take ownership (Administrators) first, write, then bounce the device.
-(An in-app setup wizard that automates steps 2–3 with one elevation is planned.)
-
-**4. Start SONO.** It finds the four devices by name and starts capturing.
-
-## Daily use
-
-- Point each app at its channel **once**: Windows Settings → System → Sound → Volume mixer
-  → app → Output device → the app's `SONO - …`. It persists per app.
-- Drag & drop apps between channels inside SONO anytime; the Windows-side choice must match
-  the channel you want the app in.
-- **OUTPUT picker** (top of the Applications panel): where the mixed channels play — usually
-  your headphones/speakers.
-- **Hotkeys**: click a shortcut box, press the combo (e.g. `Alt+7`), or press a bare
-  multimedia key. Global — works while any app has focus. `✕` clears.
-- Channel ⚙ menu: color, "Set device as Windows default" (only if you want that channel to
-  also catch all unassigned apps — remember to switch your real output back afterwards).
-- Status bar: shows the mix output, routing state, and mis-route warnings.
+"Uninstall SONO Mixer" (Start menu) removes the app. It then asks whether to **also remove
+Virtual Audio Cable** (driver, virtual devices and settings) — default **Yes**. If the
+driver file was still in use, a reboot completes the removal. The per-app Windows output
+choices become harmless "missing device" entries that Windows cleans up on its own.
 
 ## Troubleshooting
 
 - **Channel slider doesn't affect an app** → the app is playing on the wrong device. The
-  status bar will say `⚠ N app(s) mis-routed`; click it for the exact list, then fix the
-  app's Output in Windows Volume mixer.
+  status bar shows `⚠ N app(s) mis-routed`; click it for the exact list, then fix the
+  app's Output in Volume mixer.
 - **After a VAC reinstall/driver bounce**, Windows may forget per-app choices — re-check
-  them in Volume mixer. SONO will flag any drift.
+  them in Volume mixer. SONO flags any drift.
+- **Setup failed / devices missing** → re-run ⚙ → *Run automatic device setup…*; the
+  result dialog (and `%LOCALAPPDATA%\Temp\sono_setup.log`) shows exactly which step
+  failed.
 - **No sound at all** → check `%APPDATA%\SONO\log.txt`; every routing change and error is
   logged there.
+- **Weird volume/quality after changing themes in older builds** → fixed in current
+  (the audio engine is now shared for the whole app lifetime). Update.
 
 ## Licensing notes
 
 - This repository contains **no VAC binaries or license files**. Virtual Audio Cable is a
-  commercial product by EuMus Design; each user installs their own copy (a feature-limited
-  free tier exists; the full tier is paid). One BUSINESS license covers one running VAC
-  instance.
-- The Hatsune Miku mascot is fan art, included for personal use in this private repository.
+  commercial product by EuMus Design; each user supplies their own copy (a feature-limited
+  free tier exists; the full tier removes the trial voice reminder, $30–50 one-time). SONO
+  never distributes VAC — it only installs **from the user's own package**.
+- The Hatsune Miku artwork is fan art, included for personal use.
