@@ -312,6 +312,9 @@ public class MixerForm : Form
         trayMenu.Items.Add(new ToolStripSeparator());
         trayMenu.Items.Add("Exit", null, (_, _) => CloseReally());
         _tray.ContextMenuStrip = trayMenu;
+        // coming back to SONO = user wants current truth: refresh sessions immediately
+        // (the 600 ms tick alone makes the list feel stale right after focusing)
+        Activated += (_, _) => _engine.ReconcileNow();
         _tray.DoubleClick += (_, _) => ShowWindow();
         // single left-click right after a mis-route BALLOON (not any later click) → open the fix.
         // The flag expires: a stale click must just open the window like a normal tray click.
@@ -570,9 +573,10 @@ public class MixerForm : Form
     private void RefreshRows(EngineSnapshot snap)
     {
         var ownedExes = snap.Sessions.Where(s => s.Owned).Select(s => s.Exe).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // live = apps with an audio session right now (active or inactive), NOT every app
+        // ever seen — the list must mirror reality; KnownApps only feeds the "+ add" picker
         var live = snap.Sessions.Where(s => s.Exe != "unknown").Select(s => s.Exe).Distinct(StringComparer.OrdinalIgnoreCase)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        live.UnionWith(_settings.KnownApps.Select(k => k.ToLowerInvariant()));
 
         // exe → owning channel's color (for tinting the per-app sliders)
         var exeColor = new Dictionary<string, Color>(StringComparer.OrdinalIgnoreCase);
