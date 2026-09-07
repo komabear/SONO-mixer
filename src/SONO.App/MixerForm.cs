@@ -904,6 +904,18 @@ public class MixerForm : Form
             var captured = d.ID;
             item.Click += (_, _) =>
             {
+                // AudioSwitch semantics: picking an output here switches the WINDOWS
+                // DEFAULT output — every app on "default" follows system-wide — and
+                // SONO's mixer follows it too. (Previously this only moved SONO's
+                // private mix, so the switch looked like a no-op.)
+                try
+                {
+                    SONO.Core.Audio.PolicyConfigApi.SetDefaultDeviceAllRoles(captured);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, $"Could not switch default output: {ex.Message}", "SONO");
+                }
                 _settings.RealOutputId = captured;
                 Save();
                 _routing.Rebuild(_settings.RealOutputId);
