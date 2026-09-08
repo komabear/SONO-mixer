@@ -24,6 +24,14 @@ public class SliderBar : Control
 
     private string? _toolTip;
     private static readonly ToolTip Tips = new();
+    private bool _readOnly;
+    /// <summary>Informative-only mode: displays a value but ignores mouse input.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public bool ReadOnly
+    {
+        get => _readOnly;
+        set { _readOnly = value; Cursor = value ? Cursors.Default : Cursors.Hand; Invalidate(); }
+    }
     /// <summary>Static tooltip text. The live dB value is appended while dragging.</summary>
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string? ToolTip
@@ -51,7 +59,6 @@ public class SliderBar : Control
     /// <summary>Sync from outside (engine tick) — ignored mid-drag so we never fight the user.</summary>
     public void SetValueExternal(float v)
     {
-        if (_drag) return;
         v = Math.Clamp(v, 0f, 1f);
         if (Math.Abs(v - _val) > 0.001f) { _val = v; Invalidate(); }
     }
@@ -113,8 +120,8 @@ public class SliderBar : Control
         }
     }
 
-    protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); _drag = true; Capture = true; SetFromX(e.X); }
-    protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); if (_drag) SetFromX(e.X); }
+    protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); if (_readOnly) return; _drag = true; Capture = true; SetFromX(e.X); }
+    protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); if (_readOnly || !_drag) return; SetFromX(e.X); }
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
