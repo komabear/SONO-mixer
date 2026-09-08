@@ -10,6 +10,11 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
+        // explicit taskbar identity: the taskbar groups SONO under one AUMID and takes the
+        // icon from a stable source — without this, re-published exes at the same path can
+        // surface Explorer's cached default icon (the white-window glyph)
+        AppUserModel.Set("komabear.SONO.Mixer");
+
         // survive UI/background-thread exceptions: log them, keep the mixer alive
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) =>
