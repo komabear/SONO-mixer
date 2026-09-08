@@ -612,7 +612,8 @@ public class MixerForm : Form
                 chip.ForeColor = ownedExes.Contains(exe) ? Theme.Muted : Theme.Text;
             if (row.Controls[1] is SliderBar s)
             {
-                s.Enabled = !ownedExes.Contains(exe);
+                // informative-only: always mirror the real session volume (no enable
+                // toggling — the readout reflects every app, owned or not)
                 s.Fill = exeColor.TryGetValue(exe, out var c) ? c : Theme.Accent;
                 var sess = snap.Sessions.FirstOrDefault(x => x.Exe == exe);
                 if (sess is not null) s.SetValueExternal(sess.Volume);
@@ -630,11 +631,13 @@ public class MixerForm : Form
         chip.TextAlign = ContentAlignment.MiddleLeft;
         row.Controls.Add(chip);
 
-        var slider = new SliderBar { Location = new Point(116, 2), Size = new Size(122, 30), Anchor = AnchorStyles.Left };
+        // informative-only volume readout: the slider MIRRORS the app's session volume.
+        // Changing app volume belongs to the owning channel (or Windows Volume mixer for
+        // unowned apps) — an interactive slider here fought the engine every tick and
+        // needed full session reconciles per drag frame (the lag report).
+        var slider = new SliderBar { Location = new Point(116, 2), Size = new Size(122, 30), Anchor = AnchorStyles.Left, ReadOnly = true };
         slider.Fill = Theme.Accent;
         slider.SetValueExternal(1f);
-        slider.ValueChanged += v => _engine.SetIndependentVolume(exe, v, null);
-        slider.EditCommitted += _ => SyncRowTag(row);
         row.Controls.Add(slider);
 
         var mute = new Button
@@ -657,11 +660,6 @@ public class MixerForm : Form
         };
         row.Controls.Add(mute);
         return row;
-    }
-
-    private void SyncRowTag(Panel row)
-    {
-        // engine tick will re-sync real volumes; nothing else needed here
     }
 
     // ---------- engine ticks ----------
