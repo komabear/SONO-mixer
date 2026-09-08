@@ -310,6 +310,16 @@ public class MixerForm : Form
         trayMenu.Items.Add("Mute all channels", null, (_, _) => SetAllMuted(true));
         trayMenu.Items.Add("Unmute all channels", null, (_, _) => SetAllMuted(false));
         trayMenu.Items.Add(new ToolStripSeparator());
+
+        // quick output switch (AudioSwitch-style): lists every non-cable render device,
+        // checkmark on the current Windows default, click switches the system default.
+        // Rebuilt every time the menu opens so new/removed devices show up.
+        var outputItem = new ToolStripMenuItem("Output");
+        outputItem.DropDownItems.Add(new ToolStripMenuItem("…"));
+        outputItem.DropDownOpening += (_, _) => RebuildTrayOutputMenu(outputItem);
+        trayMenu.Items.Add(outputItem);
+
+        trayMenu.Items.Add(new ToolStripSeparator());
         trayMenu.Items.Add("Exit", null, (_, _) => CloseReally());
         _tray.ContextMenuStrip = trayMenu;
         // coming back to SONO = user wants current truth: refresh sessions immediately
@@ -929,6 +939,40 @@ public class MixerForm : Form
         }
         _outputMenu.Show(_outputBtn, new Point(0, _outputBtn.Height));
         UpdateOutputButtonLabel(current);
+    }
+
+    /// <summary>Fill the tray's Output submenu: every non-cable render device, checkmark on
+    /// the current Windows default; clicking switches the system default (AudioSwitch-style).
+    /// Runs on each menu open so the device list is always fresh.</summary>
+    private void RebuildTrayOutputMenu(ToolStripMenuItem parent)
+    {
+        parent.DropDownItems.Clear();
+        var en = new MMDeviceEnumerator();
+        string defaultId = "";
+        try { defaultId = en.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console).ID; } catch { }
+
+        foreach (var d in en.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
+                     .Where(d => !d.FriendlyName.Contains("Virtual Audio Cable", StringComparison.OrdinalIgnoreCase)))
+        {
+            bool isDefault = d.ID == defaultId;
+            var item = new ToolStripMenuItem(d.FriendlyName)
+            {
+                Checked = isDefault,
+                CheckOnClick = false,
+                Font = new Font("Segoe UI", 10f, isDefault ? FontStyle.Bold : FontStyle.Regular),
+            };
+            var captured = d.ID;
+            item.Click += (_, _) =>
+            {
+                try { SONO.Core.Audio.PolicyConfigApi.SetDefaultDeviceAllRoles(captured); }
+                catch (Exception ex) { MessageBox.Show(this, $"Could not switch default output: {ex.Message}", "SONO"); return; }
+                lock (_settings) _settings.RealOutputId = captured;
+                Save();
+                _routing.Rebuild(captured);
+                UpdateOutputButtonLabel(captured);
+            };
+            parent.DropDownItems.Add(item);
+        }
     }
 
     private void UpdateOutputButtonLabel(string? forced = null)
