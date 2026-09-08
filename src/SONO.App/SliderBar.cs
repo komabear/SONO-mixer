@@ -87,6 +87,10 @@ public class SliderBar : Control
             g.FillRectangle(fb, x0, cy - TrackH / 2, fw, TrackH);
         }
 
+        // read-only sliders (Applications panel readouts) omit the thumb: a ball invites
+        // dragging. Just the filled track.
+        if (_readOnly) return;
+
         int r = ThumbR + (_hover || _drag ? 1 : 0);
         using (var b = new SolidBrush(Color.White))
             g.FillEllipse(b, x0 + fw - r, cy - r, r * 2, r * 2);
