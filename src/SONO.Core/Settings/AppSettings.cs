@@ -28,6 +28,9 @@ public sealed class AppSettings
     /// <summary>True once the app has written the autostart Run key for the first time —
     /// prevents re-asserting it (and re-pointing it at a different exe path) every launch.</summary>
     public bool AutostartConfigured { get; set; }
+    /// <summary>Routing mode: "" = auto-detect (Full if SONO devices exist, else Simple),
+    /// "simple" = group volumes via session APIs only (no driver), "full" = VAC virtual devices.</summary>
+    public string Mode { get; set; } = "";
     public List<ChannelDefinition> Channels { get; set; } = new();
 }
 
