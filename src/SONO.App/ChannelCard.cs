@@ -37,7 +37,6 @@ public class ChannelCard : Control
     public event Action<string, HotkeySlot, string?>? HotkeySet;
     public event Action<string>? DefinitionEdited;
     public event Action<string>? AddAppRequested;
-    public event Action<string>? MakeDefaultRequested;
 
     public ChannelCard(ChannelDefinition def, SONO.App.HotkeyManager hotkeys)
     {
@@ -356,7 +355,6 @@ public class ChannelCard : Control
             }
             colorMenu.Show(Cursor.Position);
         });
-        menu.Items.Add("Set device as Windows default", null, (_, _) => MakeDefaultRequested?.Invoke(ChannelId));
         menu.Show(_gear, new Point(0, _gear.Height));
     }
 }

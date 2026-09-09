@@ -10,14 +10,12 @@ public class MixerForm : Form
     private readonly AudioEngine _engine;
     private readonly HotkeyManager _hotkeys;
     private readonly AppSettings _settings;
-    private readonly RoutingHealthMonitor _health = new();
     private readonly OsdWindow _osd = new();
     private readonly NotifyIcon _tray;
     private readonly System.Windows.Forms.Timer _reconcileDebounce;
     private readonly Dictionary<string, ChannelCard> _cards = new();
     private readonly Dictionary<string, Panel> _appRows = new(StringComparer.OrdinalIgnoreCase);
     private readonly ToolStripMenuItem _miAutostart, _miMinimized;
-    private bool _setupRunning;
     private readonly Label _status;
     private readonly TableLayoutPanel _table;
     private DarkComboBox _outputPick = new();
@@ -38,15 +36,11 @@ public class MixerForm : Form
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public bool SuppressCleanup { get; set; }
 
-    private readonly RoutingEngine _routing;                  // shared ApplicationContext-wide
-                                                              // (theme swaps must NOT re-create it)
-                                                              // initialized from ctor param below
-    public MixerForm(AudioEngine engine, HotkeyManager hotkeys, RoutingEngine routing,
+    public MixerForm(AudioEngine engine, HotkeyManager hotkeys,
         AppSettings settings, bool launchedAtBoot)
     {
         _engine = engine;
         _hotkeys = hotkeys;
-        _routing = routing;
         _settings = settings;
         _launchedAtBoot = launchedAtBoot;
         _hotkeys.Pressed += OnHotkey;
@@ -172,47 +166,9 @@ public class MixerForm : Form
             };
             miOsd.DropDownItems.Add(item);
         }
-        var miSetup = new ToolStripMenuItem("Run automatic device setup…");
-        miSetup.Click += (_, _) => RunDeviceSetupWizard();
-        var miMode = new ToolStripMenuItem("Mode");
-        var miModeSimple = new ToolStripMenuItem("Simple — group volumes, no driver");
-        var miModeFull = new ToolStripMenuItem("Full — virtual devices (needs VAC)");
-        void SyncModeChecks()
-        {
-            lock (_settings)
-            {
-                miModeSimple.Checked = _settings.Mode == "simple";
-                miModeFull.Checked = _settings.Mode != "simple";
-            }
-        }
-        miModeSimple.Click += (_, _) =>
-        {
-            lock (_settings) _settings.Mode = "simple";
-            Save(); SyncModeChecks();
-            MessageBox.Show(this,
-                "Simple mode will be active after SONO restarts.\n\n" +
-                "Groups control their apps' volumes directly (Windows session volumes) — no driver needed. " +
-                "Apps play straight to your normal output; the OUTPUT picker switches the Windows default.",
-                "SONO Mixer — mode", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        };
-        miModeFull.Click += (_, _) =>
-        {
-            lock (_settings) _settings.Mode = "full";
-            Save(); SyncModeChecks();
-            var have = Core.SystemIntegrations.DeviceSetup.SonoEndpointsPresent();
-            MessageBox.Show(this,
-                (have
-                    ? "Full mode will be active after SONO restarts."
-                    : "Full mode will be active after SONO restarts.\n\nNo \"SONO - …\" devices found yet — the device setup wizard will run next launch (or ⚙ → Run automatic device setup…)."),
-                "SONO Mixer — mode", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        };
-        miMode.DropDownItems.Add(miModeSimple);
-        miMode.DropDownItems.Add(miModeFull);
-        SyncModeChecks();
-
         var miAbout = new ToolStripMenuItem("About SONO Mixer");
         miAbout.Click += (_, _) => new AboutDialog().ShowDialog(this);
-        settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep, miOsd, miMode, miTheme, miSetup, miAbout });
+        settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep, miOsd, miTheme, miAbout });
         settingsBtn.Click += (_, _) => settingsMenu.Show(settingsBtn, new Point(0, settingsBtn.Height));
 
         // ---- OUTPUT: field-styled button opening a fully themed dropdown (no native combo popup) ----
@@ -286,21 +242,6 @@ public class MixerForm : Form
             Size = new Size(288, 34),
             Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
         };
-        _status.Click += (_, _) =>
-        {
-            if (_misroutes.Count > 0)
-            {
-                var lines = _misroutes.Take(6).Select(m => $"• {m.Exe} → should play on \"SONO - {m.ChannelName}\" (now on {m.ActualDevice})");
-                var ask = MessageBox.Show(this,
-                    "These apps are not playing into their channel's virtual device, so their channel slider cannot control them:\n\n"
-                    + string.Join("\n", lines)
-                    + "\n\nOpen Windows Volume mixer now so you can set each app's Output to its channel's \"SONO - …\" device?\n"
-                    + "(This is a one-time Windows setting per app — Windows provides no API to set it programmatically.)",
-                    "Mis-routed apps", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
-                if (ask == DialogResult.Yes)
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:appsvolume") { UseShellExecute = true });
-            }
-        };
 
         right.Controls.Add(rightHead);
         right.Controls.Add(rightSub);
@@ -362,29 +303,10 @@ public class MixerForm : Form
         // (the 600 ms tick alone makes the list feel stale right after focusing)
         Activated += (_, _) => _engine.ReconcileNow();
         _tray.DoubleClick += (_, _) => ShowWindow();
-        // single left-click right after a mis-route BALLOON (not any later click) → open the fix.
-        // The flag expires: a stale click must just open the window like a normal tray click.
-        _tray.BalloonTipClicked += (_, _) =>
-        {
-            if (_misroutes.Count > 0)
-            {
-                _misrouteBalloonPending = false;
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:appsvolume") { UseShellExecute = true });
-            }
-        };
         _tray.MouseClick += (_, e) =>
         {
-            // left-click within the balloon's grace window follows the balloon's action;
-            // otherwise a left-click behaves like double-click (opens the mixer)
-            if (e.Button == MouseButtons.Left)
-            {
-                if (_misrouteBalloonPending && _misroutes.Count > 0)
-                {
-                    _misrouteBalloonPending = false;
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:appsvolume") { UseShellExecute = true });
-                }
-                else ShowWindow();
-            }
+            // left-click opens the mixer (same as double-click, but snappier)
+            if (e.Button == MouseButtons.Left) ShowWindow();
         };
 
         _reconcileDebounce = new System.Windows.Forms.Timer { Interval = 150 };
@@ -396,51 +318,20 @@ public class MixerForm : Form
 
         Load += (_, _) =>
         {
-            // resolve mode: explicit setting wins; "" auto-detects (SONO devices → Full, else Simple)
-            bool simple;
+            // ONE MODE: group volumes via Windows session APIs; apps play straight to
+            // the Windows default output. No driver, no setup.
+            bool dirty = false;
             lock (_settings)
-            {
-                if (_settings.Mode == "")
-                    _settings.Mode = Core.SystemIntegrations.DeviceSetup.SonoEndpointsPresent() ? "full" : "simple";
-                simple = _settings.Mode == "simple";
-            }
+                foreach (var c in _settings.Channels)
+                    if (c.DeviceId is not null) { c.DeviceId = null; dirty = true; }   // migrate from old VAC mode
+            if (dirty) Save();
             BuildCards();
             ReflowGrid();
             IReadOnlyList<ChannelDefinition> Snapshot() { lock (_settings) return _settings.Channels.ToList(); }
-            _engine.SetChannelSource(Snapshot);   // session-ownership keeps unclaimed apps at unity
+            _engine.SetChannelSource(Snapshot);   // group ownership: claimed apps follow their group's volume
             _engine.Start(600);
-            _routing.SetChannelSource(Snapshot);
             RebindHotkeys();
-            // sanitize: real output must never be one of the channel cables (feedback loop)
-            if (_settings.RealOutputId is string ro && _settings.Channels.Any(c => c.DeviceId == ro))
-            { _settings.RealOutputId = null; Save(); }
-            if (simple)
-            {
-                // SIMPLE MODE: no virtual devices. Group volumes run through session APIs;
-                // apps play straight to the Windows default. Clear any stale device bindings.
-                bool dirty = false;
-                lock (_settings)
-                    foreach (var c in _settings.Channels)
-                        if (c.DeviceId is not null) { c.DeviceId = null; dirty = true; }
-                if (dirty) Save();
-            }
-            else ResolveDeviceMappings();
             UpdateOutputButtonLabel();
-            _routing.Rebuild(_settings.RealOutputId);
-            RefreshRoutingVolumes();
-            // first-run wizard: FULL MODE only. Simple mode needs no setup at all.
-            if (!simple && !Core.SystemIntegrations.DeviceSetup.SonoEndpointsPresent())
-            {
-                BeginInvoke(() =>
-                {
-                    if (MessageBox.Show(this,
-                            "Welcome to SONO Mixer!\n\nNo \"SONO - …\" audio devices were found. Run the automatic setup now?\n\n" +
-                            "It will configure the Virtual Audio Cable driver (4 cables), name the devices\n" +
-                            "SONO - Game / Chat / Media / Aux, and activate them. Requires administrator rights.",
-                            "SONO Mixer — first run", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                        RunDeviceSetupWizard();
-                });
-            }
             if (_launchedAtBoot && _settings.StartMinimized) HideToTray(showBalloon: true);
         };
 
@@ -537,21 +428,14 @@ public class MixerForm : Form
     private void CreateCard(ChannelDefinition def)
     {
         var card = new ChannelCard(def, _hotkeys) { Dock = DockStyle.Fill, Margin = new Padding(8) };
-        card.VolumeLive += (_, _) => { RefreshRoutingVolumes(); _reconcileDebounce.Start(); };
+        card.VolumeLive += (_, _) => { _reconcileDebounce.Start(); };
         card.VolumeCommitted += _ => { Save(); _engine.ReconcileNow(); };
-        card.MuteToggled += _ => { Save(); _engine.ReconcileNow(); RefreshRoutingVolumes(); };
+        card.MuteToggled += _ => { Save(); _engine.ReconcileNow();  };
         card.ExeDropped += (exe, chId) => AssignExe(exe, chId);
         card.ExeRemoved += exe => { RemoveExeEverywhere(exe); Save(); _engine.ReconcileNow(); RefreshRows(_last!); };
         card.HotkeySet += (_, _, _) => { RebindHotkeys(); Save(); };
         card.DefinitionEdited += _ => Save();
         card.AddAppRequested += id => ShowAddAppDialog(id);
-        card.MakeDefaultRequested += id =>
-        {
-            var d = _settings.Channels.FirstOrDefault(c => c.Id == id);
-            if (d?.DeviceId is string did)
-                try { SONO.Core.Audio.PolicyConfigApi.SetDefaultDevice(did); }
-                catch (Exception ex) { MessageBox.Show(this, $"Could not set default device: {ex.Message}", "SONO"); }
-        };
         _cards[def.Id] = card;
         _table.Controls.Add(card);
     }
@@ -570,47 +454,8 @@ public class MixerForm : Form
         _engine.ReconcileNow();
         if (_last is not null) { RefreshRows(_last); UpdateCards(_last); }
 
-        // AUTOMATIC ROUTING (Full mode only): write Windows' per-app endpoint store so the
-        // app's audio lands on this channel's device from its next session (restart).
-        // Simple mode has no channel devices — group volumes run via session APIs instead.
-        if (_settings.Mode != "simple")
-            RouteExeToChannel(exe, channelId);
     }
 
-    /// <summary>Point an exe's Windows per-app output at its channel's device via the
-    /// DefaultEndpoint store (undocumented but stable; verified empirically). Runs on a
-    /// worker thread — registry + process queries must not block the UI.</summary>
-    private void RouteExeToChannel(string exe, string channelId)
-    {
-        Task.Run(() =>
-        {
-            try
-            {
-                string? deviceId = null;
-                lock (_settings)
-                    deviceId = _settings.Channels.FirstOrDefault(c => c.Id == channelId)?.DeviceId;
-                if (deviceId is null) return;
-
-                // find a live process of this exe ( SONO only sees running apps in the list;
-                //  offline apps get routed when they next appear via the reconcile path )
-                var procs = System.Diagnostics.Process.GetProcessesByName(exe);
-                var anyPid = procs.FirstOrDefault(p => p is not null)?.Id;
-                if (procs is { Length: > 0 })
-                    foreach (var p in procs) p?.Dispose();
-
-                if (anyPid is int pid &&
-                    Core.SystemIntegrations.AppEndpointStore.SetAppEndpoint(pid, deviceId))
-                {
-                    Core.Diagnostics.Log.Write($"routed {exe} -> channel device {deviceId} (takes effect on app restart)");
-                }
-                else
-                {
-                    Core.Diagnostics.Log.Write($"could not route {exe} (no live process or store write failed) — Volume mixer remains the fallback");
-                }
-            }
-            catch (Exception ex) { Core.Diagnostics.Log.Write($"RouteExeToChannel failed: {ex.Message}"); }
-        });
-    }
 
     private void RemoveExeEverywhere(string exe)
     {
@@ -759,43 +604,9 @@ public class MixerForm : Form
 
     private EngineSnapshot? _last;
 
-    private List<RoutingHealthMonitor.MisRoute> _misroutes = new();
-    private int _healthCooldown;
-    private bool _misrouteBalloonPending;   // balloon shown → next tray click opens Volume mixer
-
     private void OnTick(EngineSnapshot snap)
     {
         _last = snap;
-        // health scan every ~5s (6 ticks × 600ms), off the hot path
-        if (++_healthCooldown >= 6)
-        {
-            _healthCooldown = 0;
-            Task.Run(() =>
-            {
-                var found = _health.Scan(SnapshotChannels());
-                BeginInvoke(() =>
-                {
-                    var before = _misroutes.Count;
-                    _misroutes = found;
-                    if (_misroutes.Count != before && _status is not null)
-                        _status.Text = $"▶ {snap.OutputDevice}{RoutingSuffix()}";
-                    // new mis-route (count grew) → tray balloon, since the status bar is
-                    // easy to miss and a mis-routed app bypasses its channel entirely
-                    if (_misroutes.Count > before)
-                    {
-                        var first = _misroutes.FirstOrDefault();
-                        _tray.ShowBalloonTip(4000, "SONO — app mis-routed",
-                            first is null ? "" :
-                            $"{first.Exe} is playing on \"{first.ActualDevice}\" instead of \"SONO - {first.ChannelName}\"." +
-                            (_misroutes.Count > 1 ? $" (+{_misroutes.Count - 1} more)" : "") +
-                            "\nClick to open Volume mixer and fix it.", ToolTipIcon.Warning);
-                        _misrouteBalloonPending = true;
-                        // the balloon is transient: its click-action must expire with it
-                        Task.Delay(6000).ContinueWith(_ => _misrouteBalloonPending = false);
-                    }
-                });
-            });
-        }
         UpdateCards(snap);
         RefreshRows(snap);
         RememberKnownApps(snap);
@@ -803,19 +614,8 @@ public class MixerForm : Form
             ? $"⚠ {snap.Error}"
             : _hotkeyError is not ""
                 ? $"⚠ Hotkey: {_hotkeyError}"
-                : $"▶ {snap.OutputDevice}{RoutingSuffix()}";
+                : $"▶ {snap.OutputDevice}";
     }
-
-    private IReadOnlyList<ChannelDefinition> SnapshotChannels()
-    { lock (_settings) return _settings.Channels.ToList(); }
-
-    private string RoutingSuffix() => _routing.Error is not null
-        ? $"  |  ⚠ routing: {_routing.Error}"
-        : _misroutes.Count > 0
-            ? $"  |  ⚠ {_misroutes.Count} app(s) mis-routed — click here to fix"
-            : _routing.ActiveStreams > 0
-                ? $"  |  routing {_routing.ActiveStreams} ch"
-                : "";
 
     private void UpdateCards(EngineSnapshot snap)
     {
@@ -842,126 +642,6 @@ public class MixerForm : Form
 
     /// <summary>One-elevation setup: driver install (if needed), cables=4, endpoint renames,
     /// device bounce. Shows a progress dialog throughout; reports per-step results at the end.</summary>
-    private async void RunDeviceSetupWizard()
-    {
-        if (_setupRunning) return;          // no double-run
-        _setupRunning = true;
-        try { await RunDeviceSetupWizardCore(); }
-        finally { _setupRunning = false; }
-    }
-
-    private async System.Threading.Tasks.Task RunDeviceSetupWizardCore()
-    {
-        var endpoints = Core.SystemIntegrations.DeviceSetup.VacRenderEndpoints();
-        string? driverLog = null;
-
-        using var progress = new SetupProgressDialog { StartPosition = FormStartPosition.CenterParent };
-
-        // ---- Phase 0: no VAC devices at all → install the driver from the user's own package
-        if (endpoints.Count == 0 && !Core.SystemIntegrations.DeviceSetup.VacServicePresent)
-        {
-            using var pick = new SetupFolderDialog();
-            if (pick.ShowDialog(this) != DialogResult.OK) return;
-
-            progress.SetStatus("Installing the Virtual Audio Cable driver…\nApprove the administrator prompt.");
-            progress.Show(this);
-            var step = new Progress<string>(s => progress.SetStatus(s));
-            driverLog = await Core.SystemIntegrations.DeviceSetup.RunElevatedAsync(
-                Core.SystemIntegrations.DeviceSetup.BuildDriverInstallScript(pick.InfPath), step);
-
-            progress.SetStatus("Waiting for the new audio devices to appear…");
-            // wait for the driver to enumerate (pnputil + bounce can take a while)
-            for (int wait = 0; wait < 15 && endpoints.Count == 0; wait++)
-            {
-                await Task.Delay(1000);
-                endpoints = Core.SystemIntegrations.DeviceSetup.VacRenderEndpoints();
-            }
-        }
-
-        endpoints = Core.SystemIntegrations.DeviceSetup.VacRenderEndpoints();
-        if (endpoints.Count == 0)
-        {
-            progress.Close();
-            MessageBox.Show(this,
-                "No Virtual Audio Cable devices were found.\n\n" +
-                (driverLog is null
-                    ? "Install VAC 4.x first (see README), then run this again."
-                    : "Driver install ran, but no devices appeared.\n\nSetup log:\n" + driverLog.Replace("\r\n", "\n")),
-                "SONO Mixer — setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-
-        progress.SetStatus($"Configuring {endpoints.Count} device(s) — naming channels SONO - Game / Chat / Media / Aux…\nApprove the administrator prompt.");
-        if (!progress.Visible) progress.Show(this);
-        var step2 = new Progress<string>(s => progress.SetStatus(s));
-
-        if (endpoints.Count < 4)
-            driverLog += $"\nOnly {endpoints.Count} VAC device(s) found — 4 expected. Cable count will be set to 4 by setup.";
-
-        var script = Core.SystemIntegrations.DeviceSetup.BuildScript(endpoints);
-        string log;
-        try { log = await Core.SystemIntegrations.DeviceSetup.RunElevatedAsync(script, step2); }
-        catch (Exception ex)
-        {
-            progress.Close();
-            MessageBox.Show(this, $"Setup was cancelled or failed: {ex.Message}", "SONO Mixer — setup",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-
-        progress.SetStatus("Almost done — restarting the devices and setting defaults…");
-        // wait a moment for the device bounce to re-enumerate, then re-resolve
-        await Task.Delay(4500);
-
-        // fresh identities → re-resolve mappings, then make SONO - Game the Windows default
-        ResolveDeviceMappings();
-        _routing.Rebuild(_settings.RealOutputId);
-        UpdateOutputButtonLabel();
-
-        string defaultNote = "";
-        // make SONO - Game the Windows default: resolve the device by name right here —
-        // ResolveDeviceMappings may have just rewritten it, and endpoint IDs can be stale
-        var game = _settings.Channels.FirstOrDefault(c => c.Name == "Game");
-        string? gid = game?.DeviceId;
-        if (string.IsNullOrEmpty(gid) || !gid.StartsWith("0.0.0.0"))
-        {
-            try
-            {
-                gid = new MMDeviceEnumerator().EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active)
-                    .FirstOrDefault(d => d.FriendlyName.StartsWith("SONO - Game", StringComparison.OrdinalIgnoreCase))?.ID;
-            }
-            catch { }
-        }
-        if (string.IsNullOrEmpty(gid))
-        {
-            defaultNote = "\nCould not find \"SONO - Game\" to set as Windows default — set it manually in Sound settings.";
-            Core.Diagnostics.Log.Write("setup: SONO - Game endpoint not found for default-set");
-        }
-        else
-        {
-            try
-            {
-                SONO.Core.Audio.PolicyConfigApi.SetDefaultDeviceAllRoles(gid);
-                defaultNote = "\nWindows default output set to SONO - Game.";
-                Core.Diagnostics.Log.Write($"setup: default output set to SONO - Game ({gid})");
-            }
-            catch (Exception ex)
-            {
-                defaultNote = $"\nCould not set SONO - Game as Windows default automatically ({ex.Message}).";
-                Core.Diagnostics.Log.Write($"setup: SetDefaultEndpoint failed: {ex.Message}");
-            }
-        }
-
-        progress.Close();
-        var ok = log.Contains(": OK") || (driverLog is not null && driverLog.Contains("device node created"));
-        MessageBox.Show(this,
-            (ok ? "Device setup finished.\n\n" : "Setup finished with some errors.\n\n") +
-            ((driverLog is not null ? "[driver install]\n" + driverLog.Replace("\r\n", "\n") + "\n\n" : "") +
-            (log.Length > 0 ? "[device naming]\n" + log.Replace("\r\n", "\n") : "") +
-            defaultNote),
-            "SONO Mixer — setup", MessageBoxButtons.OK,
-            ok ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
-    }
 
     /// <summary>Wide window → 4 columns; narrow/square → 2×2, so cards never get cramped.</summary>
     private void ReflowGrid()
@@ -1023,7 +703,6 @@ public class MixerForm : Form
                 }
                 _settings.RealOutputId = captured;
                 Save();
-                _routing.Rebuild(_settings.RealOutputId);
                 UpdateOutputButtonLabel(captured);
             };
             _outputMenu.Items.Add(item);
@@ -1059,7 +738,6 @@ public class MixerForm : Form
                 catch (Exception ex) { MessageBox.Show(this, $"Could not switch default output: {ex.Message}", "SONO"); return; }
                 lock (_settings) _settings.RealOutputId = captured;
                 Save();
-                _routing.Rebuild(captured);
                 UpdateOutputButtonLabel(captured);
             };
             parent.DropDownItems.Add(item);
@@ -1078,26 +756,7 @@ public class MixerForm : Form
         _outputBtn.Text = "▾  " + name;
     }
 
-    private void RefreshRoutingVolumes()
-    {
-        lock (_settings) _routing.ApplyVolumes(_settings.Channels.ToList());
-    }
 
-    /// <summary>Channels bind to devices BY NAME: "Game" → endpoint starting with "SONO - Game".
-    /// Survives driver reinstalls/re-enumeration, and renaming a channel re-binds it automatically.</summary>
-    private void ResolveDeviceMappings()
-    {
-        var renders = new MMDeviceEnumerator().EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToList();
-        bool dirty = false;
-        lock (_settings)
-            foreach (var ch in _settings.Channels)
-            {
-                var want = "SONO - " + ch.Name;
-                var match = renders.FirstOrDefault(d => d.FriendlyName.StartsWith(want, StringComparison.OrdinalIgnoreCase));
-                if (match is not null && ch.DeviceId != match.ID) { ch.DeviceId = match.ID; dirty = true; }
-            }
-        if (dirty) Save();
-    }
 
     private void RememberKnownApps(EngineSnapshot snap)
     {
@@ -1136,7 +795,7 @@ public class MixerForm : Form
         }
         Save();
         _engine.ReconcileNow();
-        RefreshRoutingVolumes();
+        
         if (_last is not null) UpdateCards(_last);
         if (_settings.OsdAnchor != "off") _osd.Notify(def);
     }
@@ -1150,7 +809,7 @@ public class MixerForm : Form
                 c.Muted = muted;
         Save();
         _engine.ReconcileNow();
-        RefreshRoutingVolumes();
+        
         if (_last is not null) UpdateCards(_last);
     }
 
@@ -1201,7 +860,6 @@ public class MixerForm : Form
         _tray.Visible = false;
         _tray.Dispose();
         _reconcileDebounce.Dispose();
-        if (!SuppressCleanup) _routing.Dispose();   // shared engine; disposed only at real app exit
         base.OnFormClosed(e);
     }
 }
