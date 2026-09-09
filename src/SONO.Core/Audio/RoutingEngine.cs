@@ -22,11 +22,14 @@ public sealed class RoutingEngine : IDisposable
         public required BufferedWaveProvider Buffer { get; init; }
         public required VolumeSampleProvider Gain { get; init; }
         public MMDevice? Device { get; init; }
+        public BoundedLatencySampleProvider? DriftGuard { get; set; }   // for diagnostics
     }
 
     private readonly object _gate = new();
     private readonly Dictionary<string, ChannelStream> _streams = new(); // by channelId
     private readonly Dictionary<string, string> _deviceToChannel = new(); // deviceId → channelId
+    private System.Threading.Timer? _diagTimer;
+    private long _lastDiagLog = Environment.TickCount64;
     private MixingSampleProvider? _mixer;
     private IWavePlayer? _output;
     private MMDevice? _outputDevice;
@@ -99,10 +102,11 @@ public sealed class RoutingEngine : IDisposable
                     // drift guard: the cable clock and the real DAC clock differ slightly, so
                     // buffered audio accumulates over minutes (growing delay, then overflow
                     // silence). Trim the oldest backlog whenever it exceeds the latency budget.
-                    ISampleProvider chain = new BoundedLatencySampleProvider(
+                    var driftGuard = new BoundedLatencySampleProvider(
                         buffer, buffer.ToSampleProvider(),
                         target: TimeSpan.FromMilliseconds(100),
                         max: TimeSpan.FromMilliseconds(150));
+                    ISampleProvider chain = driftGuard;
                     if (chain.WaveFormat.SampleRate != MixerRate || chain.WaveFormat.Channels != MixerChans)
                         chain = new WdlResamplingSampleProvider(chain, MixerRate);
                     if (chain.WaveFormat.Channels == 1)
@@ -120,6 +124,7 @@ public sealed class RoutingEngine : IDisposable
                         Buffer = buffer,
                         Gain = gain,
                         Device = dev,
+                        DriftGuard = driftGuard,
                     };
                     _deviceToChannel[devId] = ch.Id;
                 }
@@ -136,6 +141,7 @@ public sealed class RoutingEngine : IDisposable
                 Error = null;
                 SONO.Core.Diagnostics.Log.Write(
                     $"Routing rebuilt: output='{outDevice.FriendlyName}' streams=[{string.Join(", ", _streams.Values.Select(v => v.Device?.FriendlyName))}]");
+                StartDiagnostics();
             }
             catch (Exception ex)
             {
@@ -144,6 +150,29 @@ public sealed class RoutingEngine : IDisposable
                 TeardownLocked();
             }
         }
+    }
+
+    /// <summary>Log per-channel buffer health every 15 s while a stream is live —
+    /// diagnoses drift direction (trims = DAC slower, underruns = DAC faster).</summary>
+    private void StartDiagnostics()
+    {
+        _diagTimer?.Dispose();
+        _diagTimer = new System.Threading.Timer(_ =>
+        {
+            try
+            {
+                lock (_gate)
+                {
+                    if (!_running) return;
+                    var stats = _streams.Values
+                        .Where(s => s.DriftGuard is not null)
+                        .Select(s => $"{s.Device?.FriendlyName?.Split(' ')[2] ?? s.ChannelId}: buffer={s.Buffer.BufferedDuration.TotalMilliseconds:0}ms trims={s.DriftGuard!.TrimCount} underruns={s.DriftGuard.UnderrunCount}");
+                    if (stats.Any())
+                        SONO.Core.Diagnostics.Log.Write("diag: " + string.Join(" | ", stats));
+                }
+            }
+            catch { }
+        }, null, 15000, 15000);
     }
 
     private static MMDevice? TryDevice(MMDeviceEnumerator en, string? id)

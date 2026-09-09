@@ -35,6 +35,10 @@ public sealed class BoundedLatencySampleProvider : ISampleProvider
 
     public WaveFormat WaveFormat => _source.WaveFormat;
 
+    // diagnostics (logged periodically by Poll in RoutingEngine)
+    internal long TrimCount;
+    internal long UnderrunCount;
+
     public int Read(Span<float> buffer)
     {
         // bounded drift trim (checked at most every ~250 ms — cheap)
@@ -46,6 +50,11 @@ public sealed class BoundedLatencySampleProvider : ISampleProvider
             {
                 long excess = buffered - _targetBytes;
                 TrimBytes((int)excess);
+                TrimCount++;
+            }
+            else if (buffered < _source.WaveFormat.AverageBytesPerSecond / 20)   // < 50 ms
+            {
+                UnderrunCount++;   // consuming faster than delivering: dry-buffer risk
             }
         }
         return _source.Read(buffer);
