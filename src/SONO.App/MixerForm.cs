@@ -517,6 +517,46 @@ public class MixerForm : Form
         Save();
         _engine.ReconcileNow();
         if (_last is not null) { RefreshRows(_last); UpdateCards(_last); }
+
+        // AUTOMATIC ROUTING: write Windows' per-app endpoint store so the app's audio
+        // lands on this channel's device from its next session (restart). Volume mixer
+        // never needs to be touched by hand. All values computed at runtime.
+        RouteExeToChannel(exe, channelId);
+    }
+
+    /// <summary>Point an exe's Windows per-app output at its channel's device via the
+    /// DefaultEndpoint store (undocumented but stable; verified empirically). Runs on a
+    /// worker thread — registry + process queries must not block the UI.</summary>
+    private void RouteExeToChannel(string exe, string channelId)
+    {
+        Task.Run(() =>
+        {
+            try
+            {
+                string? deviceId = null;
+                lock (_settings)
+                    deviceId = _settings.Channels.FirstOrDefault(c => c.Id == channelId)?.DeviceId;
+                if (deviceId is null) return;
+
+                // find a live process of this exe ( SONO only sees running apps in the list;
+                //  offline apps get routed when they next appear via the reconcile path )
+                var procs = System.Diagnostics.Process.GetProcessesByName(exe);
+                var anyPid = procs.FirstOrDefault(p => p is not null)?.Id;
+                if (procs is { Length: > 0 })
+                    foreach (var p in procs) p?.Dispose();
+
+                if (anyPid is int pid &&
+                    Core.SystemIntegrations.AppEndpointStore.SetAppEndpoint(pid, deviceId))
+                {
+                    Core.Diagnostics.Log.Write($"routed {exe} -> channel device {deviceId} (takes effect on app restart)");
+                }
+                else
+                {
+                    Core.Diagnostics.Log.Write($"could not route {exe} (no live process or store write failed) — Volume mixer remains the fallback");
+                }
+            }
+            catch (Exception ex) { Core.Diagnostics.Log.Write($"RouteExeToChannel failed: {ex.Message}"); }
+        });
     }
 
     private void RemoveExeEverywhere(string exe)
