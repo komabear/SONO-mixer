@@ -66,7 +66,7 @@ public sealed class AboutDialog : Form
         };
         var info = new Label
         {
-            Text = "Per-app audio routing for Windows — four channels\n(Game / Chat / Media / Aux), global hotkeys, and a mix\noutput. Powered by Virtual Audio Cable.",
+            Text = "Per-app audio mixer for Windows — four groups\n(Game / Chat / Media / Aux) with group volume, mute,\nglobal hotkeys and a volume OSD. No drivers needed.",
             Font = new Font("Segoe UI", 9f),
             ForeColor = theme.Muted,
             AutoSize = false,
