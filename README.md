@@ -26,11 +26,12 @@ unassigned apps ─────────────────────�
   automatically sets `SONO - Game` as default — that's intentional: Game is the
   catch-all channel for unassigned apps, and the mixer plays the sum out of your real
   output (pick it in the OUTPUT picker).
-- Windows provides **no API** to set an app's output device programmatically (verified by
-  reverse-engineering `AudioSes.dll`; the per-app choices are user-facing settings only).
-  That's why the app assignment step is manual — SONO covers everything else, and its
-  **routing health monitor** tells you whenever an assigned app is playing on the wrong
-  device (status bar shows `⚠ N app(s) mis-routed — click to fix`).
+- Windows provides **no public API** to set an app's output device programmatically, so
+  SONO writes the per-app endpoint store directly — the same setting the Volume mixer
+  edits (undocumented but stable; verified empirically). Assigning an app to a channel
+  routes it automatically; the **routing health monitor** still watches for drift
+  (status bar shows `⚠ N app(s) mis-routed — click to fix`) and offers the Volume mixer
+  as the manual fallback.
 
 ## Requirements
 
@@ -88,19 +89,26 @@ wizard appears:
 A progress dialog narrates each step; a summary dialog shows the log at the end.
 A reboot after the very first driver install is recommended.
 
-### 4. Assign apps to channels (one-time, per app)
+### 4. Assign apps to channels (drag & drop — SONO routes them for you)
 
-Windows decides where each app plays — no API exists to change it from software, so this
-is the one manual step:
+Drag an app from the Applications panel onto a channel card (or use **+ add**). SONO then:
 
-1. Open **Windows Settings → System → Sound → Volume mixer**
-2. For each app set **Output** to its channel: `Discord → SONO - Chat`,
-   `Spotify/YouTube Music → SONO - Media`, games → `SONO - Game`, …
-3. Done — the choice persists per app. Unassigned apps play on `SONO - Game` (the default
-   channel device) and still get Game's volume/hotkeys.
+- writes Windows' per-app output setting for the app, pointing it at the channel's
+  device (`SONO - Game / Chat / Media / Aux`) — automatically, no manual steps
+- applies the channel's volume/mute/hotkeys to it
 
-SONO's status bar warns `⚠ N app(s) mis-routed` whenever an assigned app is on the wrong
-device — click it to see which.
+The routing takes effect when the app **next starts playing** (its next audio session —
+restart the app if it's currently playing). Until then, SONO's status bar warns
+`⚠ N app(s) mis-routed` whenever an assigned app is playing on the wrong device; click
+it for the list and a shortcut to Windows' Volume mixer (the manual fallback).
+
+Unassigned apps play on `SONO - Game` (the default channel device) and still get
+Game's volume/hotkeys.
+
+> How it works: Windows exposes no public API for per-app output, so SONO writes the
+> same per-app endpoint store the Volume-mixer setting uses (undocumented but stable
+> for a decade+). All machine-specific values are computed at runtime — nothing about
+> your system is baked into SONO.
 
 ### 5. Mix
 
