@@ -55,6 +55,14 @@ public sealed class RoutingEngine : IDisposable
                 var channels = _channelSource?.Invoke() ?? Array.Empty<ChannelDefinition>();
                 var mapped = channels.Where(c => c.DeviceId is not null).ToList();
 
+                // Simple mode (or no bound devices): hold NO output device — apps play
+                // straight to the Windows default; group volumes run via session APIs.
+                if (mapped.Count == 0)
+                {
+                    TeardownLocked();
+                    return;
+                }
+
                 // no-op when the mapping is unchanged (e.g. UI theme swap) — avoids an audible hiccup
                 var sig = string.Join("|", mapped.Select(c => c.DeviceId)) + "#" + (preferredRealOutputId ?? "");
                 if (_running && sig == _lastSig) return;

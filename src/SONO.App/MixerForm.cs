@@ -174,9 +174,45 @@ public class MixerForm : Form
         }
         var miSetup = new ToolStripMenuItem("Run automatic device setup…");
         miSetup.Click += (_, _) => RunDeviceSetupWizard();
+        var miMode = new ToolStripMenuItem("Mode");
+        var miModeSimple = new ToolStripMenuItem("Simple — group volumes, no driver");
+        var miModeFull = new ToolStripMenuItem("Full — virtual devices (needs VAC)");
+        void SyncModeChecks()
+        {
+            lock (_settings)
+            {
+                miModeSimple.Checked = _settings.Mode == "simple";
+                miModeFull.Checked = _settings.Mode != "simple";
+            }
+        }
+        miModeSimple.Click += (_, _) =>
+        {
+            lock (_settings) _settings.Mode = "simple";
+            Save(); SyncModeChecks();
+            MessageBox.Show(this,
+                "Simple mode will be active after SONO restarts.\n\n" +
+                "Groups control their apps' volumes directly (Windows session volumes) — no driver needed. " +
+                "Apps play straight to your normal output; the OUTPUT picker switches the Windows default.",
+                "SONO Mixer — mode", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        };
+        miModeFull.Click += (_, _) =>
+        {
+            lock (_settings) _settings.Mode = "full";
+            Save(); SyncModeChecks();
+            var have = Core.SystemIntegrations.DeviceSetup.SonoEndpointsPresent();
+            MessageBox.Show(this,
+                (have
+                    ? "Full mode will be active after SONO restarts."
+                    : "Full mode will be active after SONO restarts.\n\nNo \"SONO - …\" devices found yet — the device setup wizard will run next launch (or ⚙ → Run automatic device setup…)."),
+                "SONO Mixer — mode", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        };
+        miMode.DropDownItems.Add(miModeSimple);
+        miMode.DropDownItems.Add(miModeFull);
+        SyncModeChecks();
+
         var miAbout = new ToolStripMenuItem("About SONO Mixer");
         miAbout.Click += (_, _) => new AboutDialog().ShowDialog(this);
-        settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep, miOsd, miTheme, miSetup, miAbout });
+        settingsMenu.Items.AddRange(new ToolStripItem[] { _miAutostart, _miMinimized, miStep, miOsd, miMode, miTheme, miSetup, miAbout });
         settingsBtn.Click += (_, _) => settingsMenu.Show(settingsBtn, new Point(0, settingsBtn.Height));
 
         // ---- OUTPUT: field-styled button opening a fully themed dropdown (no native combo popup) ----
@@ -360,6 +396,14 @@ public class MixerForm : Form
 
         Load += (_, _) =>
         {
+            // resolve mode: explicit setting wins; "" auto-detects (SONO devices → Full, else Simple)
+            bool simple;
+            lock (_settings)
+            {
+                if (_settings.Mode == "")
+                    _settings.Mode = Core.SystemIntegrations.DeviceSetup.SonoEndpointsPresent() ? "full" : "simple";
+                simple = _settings.Mode == "simple";
+            }
             BuildCards();
             ReflowGrid();
             IReadOnlyList<ChannelDefinition> Snapshot() { lock (_settings) return _settings.Channels.ToList(); }
@@ -370,14 +414,22 @@ public class MixerForm : Form
             // sanitize: real output must never be one of the channel cables (feedback loop)
             if (_settings.RealOutputId is string ro && _settings.Channels.Any(c => c.DeviceId == ro))
             { _settings.RealOutputId = null; Save(); }
-            ResolveDeviceMappings();
+            if (simple)
+            {
+                // SIMPLE MODE: no virtual devices. Group volumes run through session APIs;
+                // apps play straight to the Windows default. Clear any stale device bindings.
+                bool dirty = false;
+                lock (_settings)
+                    foreach (var c in _settings.Channels)
+                        if (c.DeviceId is not null) { c.DeviceId = null; dirty = true; }
+                if (dirty) Save();
+            }
+            else ResolveDeviceMappings();
             UpdateOutputButtonLabel();
             _routing.Rebuild(_settings.RealOutputId);
             RefreshRoutingVolumes();
-            // first-run: no SONO - X endpoints yet → offer the one-click wizard
-            // (covers BOTH cases: VAC present but unconfigured, and VAC fully absent —
-            // the wizard then asks for the user's package and installs the driver)
-            if (!Core.SystemIntegrations.DeviceSetup.SonoEndpointsPresent())
+            // first-run wizard: FULL MODE only. Simple mode needs no setup at all.
+            if (!simple && !Core.SystemIntegrations.DeviceSetup.SonoEndpointsPresent())
             {
                 BeginInvoke(() =>
                 {
@@ -518,10 +570,11 @@ public class MixerForm : Form
         _engine.ReconcileNow();
         if (_last is not null) { RefreshRows(_last); UpdateCards(_last); }
 
-        // AUTOMATIC ROUTING: write Windows' per-app endpoint store so the app's audio
-        // lands on this channel's device from its next session (restart). Volume mixer
-        // never needs to be touched by hand. All values computed at runtime.
-        RouteExeToChannel(exe, channelId);
+        // AUTOMATIC ROUTING (Full mode only): write Windows' per-app endpoint store so the
+        // app's audio lands on this channel's device from its next session (restart).
+        // Simple mode has no channel devices — group volumes run via session APIs instead.
+        if (_settings.Mode != "simple")
+            RouteExeToChannel(exe, channelId);
     }
 
     /// <summary>Point an exe's Windows per-app output at its channel's device via the
