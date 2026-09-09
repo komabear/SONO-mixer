@@ -134,9 +134,14 @@ public sealed class RoutingEngine : IDisposable
                 _output = new WasapiOut(outDevice, AudioClientShareMode.Shared, true, 100);
 #pragma warning restore CS0618
                 _output.Init(new SampleToWaveProvider(_mixer));
-                _output.Play();
 
+                // PRIME before playback: start captures, let ~150ms of audio accumulate in
+                // each buffer, then play. Without this, playback starts against empty
+                // buffers that never refill (equal clock rates keep the level wherever it
+                // started ≈ 0) and every scheduling hiccup drains them dry → audible dropouts.
                 foreach (var s in _streams.Values) s.Capture.StartRecording();
+                System.Threading.Thread.Sleep(150);
+                _output.Play();
                 _running = true;
                 Error = null;
                 SONO.Core.Diagnostics.Log.Write(
