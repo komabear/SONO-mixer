@@ -4,8 +4,8 @@ using SONO.Core.Audio;
 namespace SONO.App;
 
 /// <summary>
-/// Global hotkeys via RegisterHotKey on a hidden message-only window, so they work
-/// even when SONO has no focus. Re-registered wholesale whenever bindings change.
+/// Global hotkeys via RegisterHotKey on a message-only Win32 window (HWND_MESSAGE),
+/// so they work even when SONO has no focus. Re-registered wholesale whenever bindings change.
 /// </summary>
 public sealed class HotkeyManager : IDisposable
 {
@@ -17,35 +17,82 @@ public sealed class HotkeyManager : IDisposable
 
     public const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_SHIFT = 0x4, MOD_WIN = 0x8, MOD_NOREPEAT = 0x4000;
 
-    private sealed class NativeWindow : System.Windows.Forms.NativeWindow
+    // ---- minimal message-only window (no WinForms) ----
+    private const int WM_HOTKEY = 0x0312;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct WNDCLASS
     {
-        public Action<int>? OnHotkey;
-        public NativeWindow() => CreateHandle(new CreateParams());
-        protected override void WndProc(ref Message m)
-        {
-            const int WM_HOTKEY = 0x0312;
-            if (m.Msg == WM_HOTKEY) OnHotkey?.Invoke(m.WParam.ToInt32());
-            base.WndProc(ref m);
-        }
+        public uint style;
+        public IntPtr lpfnWndProc;
+        public int cbClsExtra;
+        public int cbWndExtra;
+        public IntPtr hInstance;
+        public IntPtr hIcon;
+        public IntPtr hCursor;
+        public IntPtr hbrBackground;
+        public string? lpszMenuName;
+        public string lpszClassName;
     }
 
-    private readonly NativeWindow _window = new();
-    private readonly Dictionary<int, (uint Mods, uint Vk)> _registered = new();
-    private int _nextId = 1;
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern ushort RegisterClass(ref WNDCLASS lpWndClass);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr CreateWindowEx(int exStyle, ushort classAtom, string windowName,
+        int style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr inst, IntPtr param);
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyWindow(IntPtr hWnd);
+
+    private readonly WndProc _proc;
+    private IntPtr _hwnd;
+    private delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wp, IntPtr lp);
+
+    private IntPtr Hook(IntPtr hWnd, uint msg, IntPtr wp, IntPtr lp)
+    {
+        if (msg == WM_HOTKEY)
+        {
+            var id = wp.ToInt32();
+            if (_bindings.TryGetValue(id, out var b))
+            {
+                SONO.Core.Diagnostics.Log.Write($"hotkey fired: {b.ChannelId}/{b.Slot}");
+                Pressed?.Invoke(b.ChannelId, b.Slot);
+            }
+        }
+        return DefWindowProc(hWnd, msg, wp, lp);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr wp, IntPtr lp);
+
+    public HotkeyManager()
+    {
+        _proc = Hook;   // field keeps the delegate alive for the app lifetime
+        var wc = new WNDCLASS
+        {
+            lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_proc),
+            lpszClassName = "SONOHotkeySink",
+        };
+        var atom = RegisterClass(ref wc);
+        if (atom == 0)
+        {
+            SONO.Core.Diagnostics.Log.Write($"hotkey class register failed: {Marshal.GetLastWin32Error()}");
+            return;
+        }
+        // parent = HWND_MESSAGE (-3): message-only window, invisible, receives WM_HOTKEY
+        _hwnd = CreateWindowEx(0, atom, "SONO hotkey sink", 0, 0, 0, 0, 0,
+            new IntPtr(-3), IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        if (_hwnd == IntPtr.Zero)
+            SONO.Core.Diagnostics.Log.Write($"hotkey sink create failed: {Marshal.GetLastWin32Error()}");
+    }
 
     /// <summary>(channelId, slot) per registered hotkey.</summary>
     public event Action<string, HotkeySlot>? Pressed;
 
-    public HotkeyManager() => _window.OnHotkey += id =>
-    {
-        if (_bindings.TryGetValue(id, out var b))
-        {
-            SONO.Core.Diagnostics.Log.Write($"hotkey fired: {b.ChannelId}/{b.Slot}");
-            Pressed?.Invoke(b.ChannelId, b.Slot);
-        }
-    };
-
     private readonly Dictionary<int, (string ChannelId, HotkeySlot Slot)> _bindings = new();
+    private readonly Dictionary<int, (uint Mods, uint Vk)> _registered = new();
+    private int _nextId = 1;
     private List<(string ChannelId, HotkeySlot Slot, string? HotkeyText)>? _lastBindings;
     private bool _suspended;
 
@@ -57,7 +104,7 @@ public sealed class HotkeyManager : IDisposable
         {
             if (_suspended) return;
             _lastBindings = _bindings.Select(b => (b.Value.ChannelId, b.Value.Slot, _textById.GetValueOrDefault(b.Key))).ToList();
-            foreach (var id in _registered.Keys.ToList()) { UnregisterHotKey(_window.Handle, id); }
+            foreach (var id in _registered.Keys.ToList()) { UnregisterHotKey(_hwnd, id); }
             _registered.Clear();
             _bindings.Clear();
             _textById.Clear();
@@ -91,7 +138,7 @@ public sealed class HotkeyManager : IDisposable
             _suspended = false;   // an explicit apply always ends suspension
             _lastBindings = null;
             var errors = new List<string>();
-            foreach (var id in _registered.Keys.ToList()) { UnregisterHotKey(_window.Handle, id); }
+            foreach (var id in _registered.Keys.ToList()) { UnregisterHotKey(_hwnd, id); }
             _registered.Clear();
             _bindings.Clear();
 
@@ -101,7 +148,7 @@ public sealed class HotkeyManager : IDisposable
                 if (!TryParse(text, out var mods, out var vk, out var err)) { errors.Add($"'{text}': {err}"); continue; }
 
                 int id = _nextId++;
-                if (RegisterHotKey(_window.Handle, id, mods | MOD_NOREPEAT, vk))
+                if (RegisterHotKey(_hwnd, id, mods | MOD_NOREPEAT, vk))
                 {
                     _registered[id] = (mods, vk);
                     _bindings[id] = (channelId, slot);
@@ -175,7 +222,7 @@ public sealed class HotkeyManager : IDisposable
 
     public void Dispose()
     {
-        foreach (var id in _registered.Keys) try { UnregisterHotKey(_window.Handle, id); } catch { }
+        foreach (var id in _registered.Keys) try { UnregisterHotKey(_hwnd, id); } catch { }
         _registered.Clear();
     }
 }
