@@ -1,0 +1,30 @@
+<ResourceDictionary
+  xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Fallback defaults; ThemeManager overwrites all of these at startup and on theme change. -->
+  <Color x:Key="SonoBg">#161822</Color>
+  <Color x:Key="SonoCard">#1F2230</Color>
+  <Color x:Key="SonoElevated">#262A3D</Color>
+  <Color x:Key="SonoField">#2C3046</Color>
+  <Color x:Key="SonoFieldFocus">#383D58</Color>
+  <Color x:Key="SonoChip">#2B2F42</Color>
+  <Color x:Key="SonoBorder">#363A4F</Color>
+  <Color x:Key="SonoText">#DEE1F5</Color>
+  <Color x:Key="SonoMuted">#80859E</Color>
+  <Color x:Key="SonoAccent">#7AA2F7</Color>
+  <Color x:Key="SonoDanger">#F7768E</Color>
+  <SolidColorBrush x:Key="SonoBgBrush" Color="{DynamicResource SonoBg}"/>
+  <SolidColorBrush x:Key="SonoCardBrush" Color="{DynamicResource SonoCard}"/>
+  <SolidColorBrush x:Key="SonoElevatedBrush" Color="{DynamicResource SonoElevated}"/>
+  <SolidColorBrush x:Key="SonoFieldBrush" Color="{DynamicResource SonoField}"/>
+  <SolidColorBrush x:Key="SonoBorderBrush" Color="{DynamicResource SonoBorder}"/>
+  <SolidColorBrush x:Key="SonoTextBrush" Color="{DynamicResource SonoText}"/>
+  <SolidColorBrush x:Key="SonoMutedBrush" Color="{DynamicResource SonoMuted}"/>
+  <SolidColorBrush x:Key="SonoAccentBrush" Color="{DynamicResource SonoAccent}"/>
+  <SolidColorBrush x:Key="SonoDangerBrush" Color="{DynamicResource SonoDanger}"/>
+  <SolidColorBrush x:Key="SonoGameBrush" Color="#7aa2f7"/>
+  <SolidColorBrush x:Key="SonoChatBrush" Color="#9ece6a"/>
+  <SolidColorBrush x:Key="SonoMediaBrush" Color="#bb9af7"/>
+  <SolidColorBrush x:Key="SonoAuxBrush" Color="#e0af68"/>
+  <x:String x:Key="SonoLogoUri">avares://SONO.App/Assets/logo.png</x:String>
+</ResourceDictionary>

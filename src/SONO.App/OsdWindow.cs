@@ -1,165 +1,150 @@
-using System;
-using System.Drawing;
-using System.Drawing.Drawing2D;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
-using SONO.Core.Audio;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Threading;
 
 namespace SONO.App;
 
-/// <summary>Sonar-style volume OSD: a tiny popup on hotkey presses showing which channel's
-/// volume changed. Never takes focus (WS_EX_NOACTIVATE), click-through (WS_EX_TRANSPARENT),
-/// no taskbar/Alt-Tab (WS_EX_TOOLWINDOW), always on top. Visible ~1.2 s after each press,
-/// hidden otherwise — idle cost is zero (no timers, no painting).</summary>
-public sealed class OsdWindow : Form
+/// <summary>
+/// Borderless, topmost, never-focus volume OSD: channel name + % + channel-colored bar,
+/// auto-hides after ~1.2s. Positioned per Settings.OsdAnchor ("off" disables).
+/// </summary>
+public sealed class OsdWindow : Window
 {
-    [DllImport("user32.dll")]
-    private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte alpha, uint flags);
-    private const uint LWA_ALPHA = 2;
+    private readonly TextBlock _name;
+    private readonly TextBlock _pct;
+    private readonly Border _barFill;
+    private readonly TextBlock _muteTag;
+    private readonly Border _track;
+    private DispatcherTimer? _hideTimer;
 
-    private ChannelDefinition? _def;
-    private string _valueText = "0%";
-    private readonly System.Windows.Forms.Timer _hide = new();
-
-    /// <summary>Returns the current anchor setting ("off"/"top-left"/…/"bottom-right").</summary>
-    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public Func<string>? AnchorProvider { get; set; }
+    private const int W = 330, H = 100, ScreenMargin = 18;
 
     public OsdWindow()
     {
-        var theme = Theme.Current;
-
-        FormBorderStyle = FormBorderStyle.None;
-        StartPosition = FormStartPosition.Manual;
+        SystemDecorations = SystemDecorations.None;
         ShowInTaskbar = false;
-        MinimizeBox = MaximizeBox = false;
-        ControlBox = false;
-        BackColor = theme.Card;
-        ClientSize = new Size(264, 68);
-        DoubleBuffered = true;
+        ShowActivated = false;
+        IsHitTestVisible = false;
+        Focusable = false;
+        Topmost = true;
+        CanResize = false;
+        TransparencyLevelHint = new[] { WindowTransparencyLevel.Transparent };
+        Background = Brushes.Transparent;
+        Width = W;
+        Height = H;
 
-        _hide.Interval = 1200;
-        _hide.Tick += (_, _) => Hide();
+        _name = new TextBlock { FontSize = 14, FontWeight = FontWeight.Medium };
+        _pct = new TextBlock { FontSize = 24, FontWeight = FontWeight.Bold };
+        _muteTag = new TextBlock { Text = "MUTED", FontSize = 11, FontWeight = FontWeight.SemiBold,
+            Opacity = 0, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        _barFill = new Border { CornerRadius = new CornerRadius(3), HorizontalAlignment = HorizontalAlignment.Left, Height = 8 };
+        _track = new Border { Height = 8, CornerRadius = new CornerRadius(3), ClipToBounds = true, Child = _barFill };
+
+        // top row: name (left) + % (right) — bottom row: full-width bar. Wide rectangle.
+        var topRow = new Grid { ColumnDefinitions = { new ColumnDefinition(1, GridUnitType.Star), new ColumnDefinition(GridLength.Auto) } };
+        var nameRow = new StackPanel { Orientation = Orientation.Horizontal, Children = { _name, _muteTag } };
+        topRow.Children.Add(nameRow);
+        Grid.SetColumn(_pct, 1);
+        _pct.TextAlignment = TextAlignment.Right;
+        topRow.Children.Add(_pct);
+
+        var card = new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Padding = new Thickness(24, 16),
+            CornerRadius = new CornerRadius(16),
+            Child = new StackPanel
+            {
+                Spacing = 10,
+                Children = { topRow, _track },
+            },
+        };
+        Content = card;
+        ApplyTheme();
     }
 
-    protected override bool ShowWithoutActivation => true;
-
-    protected override CreateParams CreateParams
+    private void ApplyTheme()
     {
-        get
+        var p = Themes.ThemeManager.Current;
+        IBrush Brush(string hex) => Color.TryParse(hex, out var c) ? new SolidColorBrush(c) : Brushes.Gray;
+        if (Content is Border card)
         {
-            var cp = base.CreateParams;
-            cp.ExStyle |= 0x00000008      // WS_EX_TOPMOST
-                        | 0x00000080      // WS_EX_TOOLWINDOW (no taskbar/alt-tab)
-                        | 0x08000000      // WS_EX_NOACTIVATE (never steals focus)
-                        | 0x00080000      // WS_EX_LAYERED
-                        | 0x00000020;     // WS_EX_TRANSPARENT (click-through)
-            return cp;
+            card.Background = Brush(p.Elevated);
+            _name.Foreground = Brush(p.Muted);
+            _pct.Foreground = Brush(p.Text);
+            _muteTag.Foreground = Brush(p.Danger);
+            _track.Background = Brush(p.Field);
         }
     }
 
-    protected override void OnHandleCreated(EventArgs e)
+    /// <summary>Show (or refresh) the OSD for a channel. Must run on the UI thread.</summary>
+    public void ShowOsd(string channelName, string colorHex, double volume, bool muted, string anchor)
     {
-        base.OnHandleCreated(e);
-        // layered + normal painting: full opacity via SetLayeredWindowAttributes.
-        // NOTE: no Region clipping — a per-pixel-alpha layered window with a Region
-        // clips GDI painting unpredictably (the volume bar was being cut off).
-        // The rounded look is painted directly in OnPaint instead.
-        SetLayeredWindowAttributes(Handle, 0, 255, LWA_ALPHA);
-    }
-
-    /// <summary>Show/update the OSD for a channel's current volume/mute state.</summary>
-    public void Notify(ChannelDefinition def)
-    {
-        _def = def;
-        _valueText = def.Muted ? "MUTED" : $"{MathF.Round(def.Volume * 100f):0}%";
-        PositionAtAnchor();
-        if (!Visible) Show();          // ShowWithoutActivation → no focus steal
-        Invalidate();
-        _hide.Stop();
-        _hide.Start();
-    }
-
-    public new void Hide()
-    {
-        _hide.Stop();
-        base.Hide();
-    }
-
-    private void PositionAtAnchor()
-    {
-        string anchor = AnchorProvider?.Invoke() ?? "bottom-right";
         if (anchor == "off") return;
+        _name.Text = channelName;
+        _pct.Text = $"{(int)Math.Round(volume * 100)}%";
+        _muteTag.Opacity = muted ? 1 : 0;
+        _barFill.Background = Color.TryParse(colorHex, out var c) ? new SolidColorBrush(c) : Brushes.White;
+        _track.SizeChanged += (_, _) => _barFill.Width = Math.Clamp(volume, 0, 1) * _track.Bounds.Width;
+        _barFill.Width = Math.Clamp(volume, 0, 1) * (_track.Bounds.Width > 0 ? _track.Bounds.Width : 180);
+        ApplyTheme();
+        PlaceOnScreen(anchor);
 
-        var wa = Screen.PrimaryScreen!.WorkingArea;
-        const int mx = 16, my = 16;
-        int w = ClientSize.Width, h = ClientSize.Height;
-        int x, y;
-
-        switch (anchor)
+        _hideTimer?.Stop();
+        Opacity = 1;   // cancel any in-flight fade
+        if (!IsVisible && Owner is null) Show();   // first show: unowned (never Show(this) — it becomes its own owner on reuse → crash)
+        else if (!IsVisible && Owner is Window w) Show(w);
+        _hideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+        _hideTimer.Tick += (_, _) =>
         {
-            case "top-left":     x = wa.Left + mx;                y = wa.Top + my; break;
-            case "top":          x = wa.Left + (wa.Width - w) / 2; y = wa.Top + my; break;
-            case "top-right":    x = wa.Right - w - mx;           y = wa.Top + my; break;
-            case "left":         x = wa.Left + mx;                y = wa.Top + (wa.Height - h) / 2; break;
-            case "center":       x = wa.Left + (wa.Width - w) / 2; y = wa.Top + (wa.Height - h) / 2; break;
-            case "right":        x = wa.Right - w - mx;           y = wa.Top + (wa.Height - h) / 2; break;
-            case "bottom-left":  x = wa.Left + mx;                y = wa.Bottom - h - my; break;
-            case "bottom":       x = wa.Left + (wa.Width - w) / 2; y = wa.Bottom - h - my; break;
-            default:             x = wa.Right - w - mx;           y = wa.Bottom - h - my; break; // bottom-right
-        }
-        Location = new Point(x, y);
+            _hideTimer!.Stop();
+            _hideTimer = null;
+            FadeOutAndHide();   // smooth 250 ms fade, then hide
+        };
+        _hideTimer.Start();
     }
 
-    /// <summary>Re-position for the current anchor (called on creation; cheap, no paint).</summary>
-    public void PositionAtAnchorPublic() => PositionAtAnchor();
-
-    protected override void OnPaint(PaintEventArgs e)
+    /// <summary>Manual opacity fade (12 steps × ~21 ms ≈ 250 ms) — avoids animation-API churn.</summary>
+    private void FadeOutAndHide()
     {
-        if (_def is null) return;
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        var theme = Theme.Current;
-        var accent = ColorTranslator.FromHtml(_def.ColorHex);
-
-        // flat rectangle card (rounded corners aren't possible on this layered window
-        // without a Region clip, which broke painting) — clean 1px border instead
-        using var card = new SolidBrush(theme.Card);
-        g.FillRectangle(card, 0, 0, ClientSize.Width, ClientSize.Height);
-        using var border = new Pen(theme.Border);
-        g.DrawRectangle(border, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
-
-        // channel name (top-left) and value (top-right)
-        using var nameFont = new Font("Segoe UI Semibold", 10f);
-        using var valFont = new Font("Segoe UI", 9f);
-        TextRenderer.DrawText(g, _def.Name, nameFont, new Point(14, 8), theme.Text);
-        var valSize = TextRenderer.MeasureText(g, _valueText, valFont);
-        TextRenderer.DrawText(g, _valueText, valFont,
-            new Point(ClientSize.Width - valSize.Width - 14, 10), _def.Muted ? theme.Danger : accent);
-
-        // slim volume bar, channel-colored
-        int bx = 14, by = 42, bw = ClientSize.Width - 28, bh = 10;
-        var track = RoundedPath(bx, by, bw, bh, bh / 2f);
-        using (var tb = new SolidBrush(theme.Field)) g.FillPath(tb, track);
-        float frac = Math.Clamp(_def.Muted ? 0f : _def.Volume, 0f, 1f);
-        if (frac > 0.003f)
+        int step = 0;
+        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(21) };
+        t.Tick += (_, _) =>
         {
-            int fw = Math.Max(bh, (int)(bw * frac));
-            using var fb = new SolidBrush(_def.Muted ? theme.Muted : accent);
-            g.FillPath(fb, RoundedPath(bx, by, fw, bh, bh / 2f));
-        }
+            step++;
+            Opacity = 1.0 - step / 12.0;
+            if (step >= 12)
+            {
+                t.Stop();
+                Opacity = 1;   // reset for next show
+                Hide();
+            }
+        };
+        t.Start();
     }
 
-    private static GraphicsPath RoundedPath(int x, int y, int w, int h, float r)
+    private void PlaceOnScreen(string anchor)
     {
-        var p = new GraphicsPath();
-        if (w <= 0 || h <= 0) { p.AddRectangle(new Rectangle(x, y, 1, 1)); return p; }
-        if (r <= 0) { p.AddRectangle(new Rectangle(x, y, w, h)); return p; }
-        p.AddArc(x, y, r * 2, r * 2, 180, 90);
-        p.AddArc(x + w - r * 2, y, r * 2, r * 2, 270, 90);
-        p.AddArc(x + w - r * 2, y + h - r * 2, r * 2, r * 2, 0, 90);
-        p.AddArc(x, y + h - r * 2, r * 2, r * 2, 90, 90);
-        p.CloseFigure();
-        return p;
+        var screen = Screens.Primary ?? Screens.All.FirstOrDefault();
+        if (screen is null) return;
+        var wa = screen.WorkingArea;
+
+        double x = anchor.Contains("left") ? wa.X + ScreenMargin
+                 : anchor.Contains("right") ? wa.X + wa.Width - W - ScreenMargin
+                 : wa.X + (wa.Width - W) / 2;
+        double y = anchor.Contains("top") ? wa.Y + ScreenMargin
+                 : anchor.Contains("bottom") ? wa.Y + wa.Height - H - ScreenMargin
+                 : wa.Y + (wa.Height - H) / 2;
+        Position = new PixelPoint((int)x, (int)y);
+    }
+
+    /// <summary>Static helper used by MainWindow (safe when osd is null or anchor off).</summary>
+    public static void Show(OsdWindow? osd, string anchor, string name, string color, double vol, bool muted)
+    {
+        if (osd is null || anchor == "off") return;
+        osd.ShowOsd(name, color, vol, muted, anchor);
     }
 }

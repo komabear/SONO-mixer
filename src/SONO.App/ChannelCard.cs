@@ -1,405 +1,413 @@
-using System.Drawing.Drawing2D;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Shapes;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Immutable;
+using Avalonia.Styling;
+using SONO.App.Controls;
+using SONO.App.ViewModels;
 using SONO.Core.Audio;
 
 namespace SONO.App;
 
-/// <summary>One channel track: header (name / device / gear), volume row, app drop-area, hotkey binds. Fully dock-based — fills whatever space it gets.</summary>
-public class ChannelCard : Control
+/// <summary>One group card: color dot + name, big volume slider 0–100 + %, Mute toggle,
+/// 3 hotkey boxes (Vol−/Vol+/Mute, right-click clears), member app chips, '+' assign picker.
+/// Accepts app rows dragged from the Applications panel.</summary>
+public sealed class ChannelCard : Border
 {
-    private static readonly HotkeySlot[] Slots = { HotkeySlot.VolDown, HotkeySlot.VolUp, HotkeySlot.Mute };
-    private static readonly Dictionary<HotkeySlot, string> SlotNames = new()
+    private readonly MixerVm _vm;
+    private readonly ChannelVm _ch;
+    private readonly Ellipse _dot;
+    private readonly TextBlock _name;
+    private readonly Slider _slider;
+    private readonly TextBlock _pct;
+    private readonly ToggleButton _muteBtn;
+    private readonly HotkeyBox _hkDown, _hkUp, _hkMute;
+    private readonly WrapPanel _chips;
+    private bool _draggingSlider;
+    private readonly System.Diagnostics.Stopwatch _liveThrottle = new();
+    private Thumb? _thumb;
+    private IBrush? _thumbBrush;
+
+    public ChannelCard(MixerVm vm, ChannelVm ch)
     {
-        [HotkeySlot.VolDown] = "Vol −",
-        [HotkeySlot.VolUp] = "Vol +",
-        [HotkeySlot.Mute] = "Mute",
+        _vm = vm;
+        _ch = ch;
+        Padding = new Thickness(14);
+        CornerRadius = new CornerRadius(14);
+        Margin = new Thickness(4);
+
+        _dot = new Ellipse { Width = 10, Height = 10 };
+        _name = new TextBlock { FontSize = 14, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+        _pct = new TextBlock { FontSize = 21, FontWeight = FontWeight.Bold, MinWidth = 60, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+        _slider = new Slider { Minimum = 0, Maximum = 100, MinHeight = 34 };
+        // TUNNEL phase is critical: pressing the thumb gets the event marked handled by the
+        // Thumb control, so a bubble handler never fires and the drag looks dead.
+        _slider.AddHandler(PointerPressedEvent, (_, _) => { _draggingSlider = true; _liveThrottle.Restart(); }, RoutingStrategies.Tunnel);
+        _slider.AddHandler(PointerReleasedEvent, (_, _) => CommitSlider(), RoutingStrategies.Tunnel);
+        _slider.AddHandler(PointerCaptureLostEvent, (_, _) => CommitSlider(), RoutingStrategies.Bubble);
+        _slider.ValueChanged += OnSliderLive;
+        // Fluent paints the thumb from the SYSTEM accent and outranks local styles —
+        // grab the templated Thumb directly and paint it ourselves
+        _slider.TemplateApplied += (_, _) =>
+        {
+            _thumb = FindThumb(_slider);
+            if (_thumb is not null && _thumbBrush is not null) _thumb.Background = _thumbBrush;
+        };
+
+        _muteBtn = new ToggleButton { Content = "Mute", MinWidth = 58, VerticalAlignment = VerticalAlignment.Center, Classes = { "sono" } };
+        _muteBtn.IsCheckedChanged += (object? s, RoutedEventArgs e) =>
+        {
+            var m = _muteBtn.IsChecked == true;
+            if (m != _ch.Muted) _ch.Muted = m;
+        };
+
+        _hkDown = MkHk(HotkeySlot.VolDown);
+        _hkUp = MkHk(HotkeySlot.VolUp);
+        _hkMute = MkHk(HotkeySlot.Mute);
+
+        _chips = new WrapPanel();
+        DragDrop.SetAllowDrop(this, true);   // REQUIRED in Avalonia: without it DragOver/Drop never fire
+        Build();
+
+        _ch.PropertyChanged += (_, e) => Avalonia.Threading.Dispatcher.UIThread.Post(() => SyncFromVm(e.PropertyName));
+        _ch.Apps.CollectionChanged += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(SyncChips);
+        RefreshTheme();
+        SyncFromVm(null);
+        SyncChips();
+
+        AddHandler(DragDrop.DragOverEvent, OnDragOver);
+        AddHandler(DragDrop.DragLeaveEvent, OnDragLeave);
+        AddHandler(DragDrop.DropEvent, OnDrop);
+    }
+
+    private HotkeyBox MkHk(HotkeySlot slot)
+    {
+        var box = new HotkeyBox();
+        box.Committed += text =>
+        {
+            var errs = _vm.SetHotkey(_ch.Id, slot, text);
+            if (errs.Count > 0) SONO.Core.Diagnostics.Log.Write("hotkey errors: " + string.Join("; ", errs));
+        };
+        return box;
+    }
+
+    private void SyncFromVm(string? prop)
+    {
+        if (prop is null or nameof(ChannelVm.Volume) or nameof(ChannelVm.VolumePct))
+        {
+            _name.Text = _ch.Name;   // (was never set — names were invisible)
+            _pct.Text = $"{_ch.VolumePct}%";
+            if (!_draggingSlider) _slider.Value = _ch.VolumePct;
+            _muteBtn.Content = _ch.Muted ? "Muted" : "Mute";
+        }
+        if (prop is null or nameof(ChannelVm.Muted))
+            _muteBtn.IsChecked = _ch.Muted;
+        if (prop is null or nameof(ChannelVm.VolDownKey)) _hkDown.HotkeyText = _ch.VolDownKey;
+        if (prop is null or nameof(ChannelVm.VolUpKey)) _hkUp.HotkeyText = _ch.VolUpKey;
+        if (prop is null or nameof(ChannelVm.MuteKey)) _hkMute.HotkeyText = _ch.MuteKey;
+    }
+
+    private void CommitSlider()
+    {
+        _draggingSlider = false;
+        var v = _slider.Value / 100.0;
+        if (Math.Abs(v - _ch.Volume) > 0.001) _ch.Volume = v;
+    }
+
+    /// <summary>Live preview while dragging: apply to engine throttled (~15 Hz) so audio
+    /// follows the thumb without flooding the session APIs every pixel.</summary>
+    private void OnSliderLive(object? sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (!_draggingSlider) return;
+        _pct.Text = $"{(int)Math.Round(_slider.Value)}%";
+        if (_liveThrottle.ElapsedMilliseconds < 65) return;
+        _liveThrottle.Restart();
+        var v = _slider.Value / 100.0;
+        if (Math.Abs(v - _ch.Volume) > 0.001)
+        {
+            _ch.Volume = v;   // full path: settings + engine reconcile + save
+        }
+    }
+
+    private void Build()
+    {
+        // ---- box 1: title + mute ----
+        var titleBox = MkBox();
+        var titleRow = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(_muteBtn, Dock.Right);
+        titleRow.Children.Add(_muteBtn);
+        var nameRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        nameRow.Children.Add(_dot);
+        nameRow.Children.Add(_name);
+        titleRow.Children.Add(nameRow);
+        titleBox.Child = titleRow;
+
+        // ---- box 2: volume only ----
+        var volBox = MkBox(); volBox.Margin = new Thickness(0, 6, 0, 0);
+        var volRow = new Grid();
+        volRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        volRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(_slider, 0);
+        Grid.SetColumn(_pct, 1);
+        volRow.Children.Add(_slider);
+        volRow.Children.Add(_pct);
+        volBox.Child = volRow;
+
+        // ---- box 3: apps ----
+        var appsBox = MkBox(); appsBox.Margin = new Thickness(0, 6, 0, 0);
+        var chipsHead = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        chipsHead.Children.Add(new TextBlock { Text = "APPS", Classes = { "muted" }, FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
+        DockPanel.SetDock(chipsHead, Dock.Top);
+        var chipsScroll = new ScrollViewer { Content = _chips, MaxHeight = 300 };
+        var dock = new DockPanel { LastChildFill = true };
+        dock.Children.Add(chipsHead);
+        dock.Children.Add(chipsScroll);
+        appsBox.Child = dock;
+
+        // ---- box 4: shortcuts ----
+        var hkBox = MkBox(); hkBox.Margin = new Thickness(0, 6, 0, 0);
+        var hkRow = new UniformGrid { Rows = 1, Columns = 3 };
+        HkCell(_hkDown, "Vol −", hkRow);
+        HkCell(_hkUp, "Vol +", hkRow);
+        HkCell(_hkMute, "Mute", hkRow);
+        hkBox.Child = hkRow;
+
+        var sp = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(GridLength.Auto), new RowDefinition(1, GridUnitType.Star), new RowDefinition(GridLength.Auto) } };
+        Grid.SetRow(titleBox, 0);
+        Grid.SetRow(volBox, 1);
+        Grid.SetRow(appsBox, 2);
+        Grid.SetRow(hkBox, 3);
+        sp.Children.Add(titleBox);
+        sp.Children.Add(volBox);
+        sp.Children.Add(appsBox);
+        sp.Children.Add(hkBox);
+        Child = sp;
+    }
+
+    /// <summary>Inner box: tonal fill (one step below the card), rounded, no outline.</summary>
+    private Border MkBox() => new()
+    {
+        CornerRadius = new CornerRadius(10),
+        Padding = new Thickness(10, 8),
+        Background = BoxFill,
     };
-    private static readonly ToolTip Tips = new();
 
-    private const int HeaderH = 42, VolRowH = 30, HotkeyRowH = 34;
+    private IBrush BoxFill => new ImmutableSolidColorBrush(LighterColor(Themes.ThemeManager.Current.Elevated, 0.10f));
 
-    private readonly ChannelDefinition _def;
-    private readonly HotkeyManager _hotkeys;
-    private readonly FlowLayoutPanel _apps;
-    private readonly Label _name;
-    private readonly Button _mute;
-    private readonly Button _gear;
-    private readonly SliderBar _slider;
-    private readonly Dictionary<HotkeySlot, HotkeyCaptureBox> _hotkeyBoxes = new();
-    private readonly Dictionary<HotkeySlot, Panel> _hotkeyFields = new();
-
-    public string ChannelId => _def.Id;
-
-    public event Action<string, float>? VolumeLive;
-    public event Action<string>? VolumeCommitted;
-    public event Action<string>? MuteToggled;
-    public event Action<string, string>? ExeDropped;
-    public event Action<string>? ExeRemoved;
-    public event Action<string, HotkeySlot, string?>? HotkeySet;
-    public event Action<string>? DefinitionEdited;
-    public event Action<string>? AddAppRequested;
-
-    public ChannelCard(ChannelDefinition def, SONO.App.HotkeyManager hotkeys)
+    private static void HkCell(Control box, string label, UniformGrid host)
     {
-        _def = def;
-        _hotkeys = hotkeys;
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer
-                 | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-        BackColor = Theme.Card;
-        Padding = new Padding(12);
-        var accent = ColorOf(def);
+        // side margins create gutters between the three fields (first flush left, last flush right)
+        var sp = new StackPanel { Spacing = 2, Margin = new Thickness(4, 0) };
+        sp.Children.Add(new TextBlock { Text = label, Classes = { "muted" }, FontSize = 10 });
+        sp.Children.Add(box);
+        host.Children.Add(sp);   // UniformGrid places children in order
+    }
 
-        // ---- header: name | mute | gear (both small square icon buttons) ----
-        // device mapping is implicit by name (Game → "SONO - Game"), so no chip/picker here
-        var header = new TableLayoutPanel { Dock = DockStyle.Top, Height = HeaderH, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 1 };
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 38));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 36));
+    // ---------------- chips ----------------
 
-        _name = new Label
+    private void SyncChips()
+    {
+        _chips.Children.Clear();
+        foreach (var exe in _ch.Apps)
         {
-            Text = def.Name,
-            AutoEllipsis = true,
-            Dock = DockStyle.Fill,
-            Font = new Font("Segoe UI", 14f, FontStyle.Bold),
-            ForeColor = Theme.Text,
-            BackColor = Color.Transparent,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Padding = new Padding(8, 0, 0, 0),   // extra breathing room before the title
-        };
-        header.Controls.Add(_name, 0, 0);
-
-        _mute = new Button
-        {
-            Text = "🔊",
-            Dock = DockStyle.Fill,
-            FlatStyle = FlatStyle.Flat,
-            ForeColor = Theme.Text,
-            BackColor = Color.Transparent,
-            Cursor = Cursors.Hand,
-            Margin = new Padding(0, 6, 4, 6),
-            Font = new Font("Segoe UI", 11f),
-        };
-        _mute.FlatAppearance.BorderSize = 0;
-        _mute.Click += (_, _) => { _def.Muted = !_def.Muted; UpdateMute(); MuteToggled?.Invoke(ChannelId); };
-        Tips.SetToolTip(_mute, "Mute / unmute channel");
-        header.Controls.Add(_mute, 1, 0);
-
-        _gear = new Button
-        {
-            Text = "⚙",
-            Dock = DockStyle.Fill,
-            FlatStyle = FlatStyle.Flat,
-            ForeColor = Theme.Muted,
-            BackColor = Color.Transparent,
-            Cursor = Cursors.Hand,
-            Margin = new Padding(0),
-        };
-        _gear.FlatAppearance.BorderSize = 0;
-        _gear.Click += (_, _) => ShowGearMenu();
-        header.Controls.Add(_gear, 2, 0);
-
-        // ---- slim volume bar directly under the header (padded wrapper: dock ignores Margin) ----
-        var volWrap = new Panel { Dock = DockStyle.Top, Height = VolRowH + 6, BackColor = Color.Transparent, Padding = new Padding(8, 3, 8, 3) };
-        _slider = new SliderBar { Dock = DockStyle.Fill, Fill = accent, Margin = new Padding(0) };
-        _slider.ToolTip = "Channel volume (dB)";
-        _slider.ValueChanged += v => { _def.Volume = v; VolumeLive?.Invoke(ChannelId, v); };
-        _slider.EditCommitted += _ => VolumeCommitted?.Invoke(ChannelId);
-        volWrap.Controls.Add(_slider);
-
-        // ---- hotkeys (bottom, with breathing room) — 3rd column is an explicit clear button ----
-        var hotkeysWrap = new Panel { Dock = DockStyle.Bottom, Height = HotkeyRowH * 3 + 22, BackColor = Color.Transparent, Padding = new Padding(0, 10, 0, 12) };
-        var hotkeysGrid = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Color.Transparent, ColumnCount = 3, RowCount = 3 };
-        hotkeysGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 64));
-        hotkeysGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        hotkeysGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 30));
-        int y = 0;
-        foreach (var slot in Slots)
-        {
-            hotkeysGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, HotkeyRowH));
-            var lbl = new Label
+            var e = exe;
+            var chip = new Border
             {
-                Text = SlotNames[slot],
-                Dock = DockStyle.Fill,
-                ForeColor = Theme.Muted,
-                BackColor = Color.Transparent,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Font = new Font("Segoe UI", 10f),
-                Padding = new Padding(6, 0, 0, 0),   // align labels with the title inset
+                CornerRadius = new CornerRadius(9),
+                Padding = new Thickness(9, 3),
+                Margin = new Thickness(0, 0, 4, 4),
+                Cursor = new Cursor(StandardCursorType.Hand),
             };
-            // pill container supplies the inner horizontal padding (TextBox ignores Padding).
-            // Vertical padding stays small: a single-line EDIT clips its text when its client
-            // height is under the font's line height (~19px at 10pt) — keep the box ≥ 22px.
-            var field = new Panel
+            var sp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            sp.Children.Add(new TextBlock { Text = e, FontSize = 11.5 });
+            var x = new TextBlock { Text = "✕", FontSize = 10, Classes = { "muted" } };
+            x.PointerPressed += (_, args) => { args.Handled = true; _vm.RemoveExe(e); };
+            sp.Children.Add(x);
+            chip.Child = sp;
+            chip.PointerPressed += (_, args) =>
             {
-                Dock = DockStyle.Fill,
-                BackColor = Theme.Field,
-                Padding = new Padding(14, 4, 14, 4),
-                Margin = new Padding(0, 2, 0, 2),
+                if (args.GetCurrentPoint(chip).Properties.IsLeftButtonPressed)
+                {
+                    var d = new DataObject();
+                    d.Set(DataFormats.Text, e);
+                    DragDrop.DoDragDrop(args, d, DragDropEffects.Copy | DragDropEffects.Move);
+                }
             };
-            field.Resize += (_, _) =>
-            {
-                if (field.Width > 1 && field.Height > 1)
-                    field.Region = new Region(SliderBar.RoundRect(0, 0, field.Width, field.Height, field.Height / 2));
-            };
-            var box = new HotkeyCaptureBox
-            {
-                Dock = DockStyle.Fill,
-                Tag = def.GetHotkey(slot),
-                Text = def.GetHotkey(slot) ?? "(none)",
-                Font = new Font("Segoe UI", 10f),
-                Margin = new Padding(0),
-            };
-            var clear = new Button
-            {
-                Text = "✕",
-                Dock = DockStyle.Fill,
-                FlatStyle = FlatStyle.Flat,
-                ForeColor = Theme.Muted,
-                BackColor = Color.Transparent,
-                Cursor = Cursors.Hand,
-                Margin = new Padding(4, 2, 0, 2),
-            };
-            clear.FlatAppearance.BorderSize = 0;
-            var slotCaptured = slot;
-            box.OnCaptureStart = () => _hotkeys.Suspend();
-            box.OnCaptureEnd = () => _hotkeys.Resume();
-            void ApplyHotkey(string? text)
-            {
-                _def.SetHotkey(slotCaptured, text);
-                box.Tag = text;
-                box.HotkeyText = text ?? "(none)";   // owner-drawn control: update + repaint
-                HotkeySet?.Invoke(ChannelId, slotCaptured, text);
-            }
-            box.Committed += ApplyHotkey;
-            clear.Click += (_, _) =>
-            {
-                clear.Focus();              // take focus so the capture box exits capture mode
-                ApplyHotkey(null);
-                box.Parent?.Focus();        // hand focus back to the pill container
-            };
-            Tips.SetToolTip(clear, "Clear this shortcut");
-            hotkeysGrid.Controls.Add(lbl, 0, y);
-            field.Controls.Add(box);
-            hotkeysGrid.Controls.Add(field, 1, y);
-            hotkeysGrid.Controls.Add(clear, 2, y);
-            _hotkeyBoxes[slot] = box;
-            _hotkeyFields[slot] = field;
-            y++;
+            _chips.Children.Add(chip);
         }
-        hotkeysWrap.Controls.Add(hotkeysGrid);
-
-        // ---- apps area (fill): tonal surface, no stroke (material) ----
-        var appsWrap = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Elevated, Padding = new Padding(1) };
-        var caption = new Label
-        {
-            Text = "APPS  (drag to route)",
-            Dock = DockStyle.Top,
-            Height = 20,
-            ForeColor = Theme.Muted,
-            BackColor = Color.Transparent,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Font = new Font("Segoe UI", 7f, FontStyle.Bold),
-            Padding = new Padding(4, 2, 0, 0),
-        };
-        _apps = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Theme.Elevated,
-            Padding = new Padding(5),
-            AllowDrop = true,
-        };
-        _apps.DragEnter += (_, e) =>
-        {
-            if (e.Data?.GetDataPresent(Chips.Format) == true) e.Effect = DragDropEffects.Move;
-        };
-        _apps.DragDrop += (_, e) =>
-        {
-            if (e.Data?.GetData(Chips.Format) is string exe) ExeDropped?.Invoke(exe, ChannelId);
-        };
-        appsWrap.Controls.Add(_apps);
-        appsWrap.Controls.Add(caption);
-
-        // dock order: WinForms lays out docked children in REVERSE add order, so the
-        // header must be added LAST to be processed FIRST (top strip). Result top→bottom:
-        // header (name/mute/gear) → slim volume bar → apps (fill) → hotkeys.
-        Controls.Add(appsWrap);
-        Controls.Add(volWrap);
-        Controls.Add(hotkeysWrap);
-        Controls.Add(header);
-
-        _slider.SetValueExternal(def.Volume);
-        UpdateMute();
+        StyleChips();
     }
 
-    private static Color ColorOf(ChannelDefinition def) => ColorTranslator.FromHtml(def.ColorHex);
-
-    private bool _compact;
-
-    /// <summary>Compact mode (window ≤ half screen height): hide the shortcut block entirely.</summary>
-    public void SetCompact(bool compact)
+    private void StyleChips()
     {
-        if (_compact == compact) return;
-        _compact = compact;
-        foreach (var f in _hotkeyFields.Values) f.Visible = !compact;
-        foreach (var b in _hotkeyBoxes.Values) b.Visible = !compact;
-        hotkeysWrapVisible();
-    }
-
-    private void hotkeysWrapVisible()
-    {
-        // the wrapper itself collapses so the apps area reclaims the space
-        Controls.OfType<Panel>().FirstOrDefault(p => p.Dock == DockStyle.Bottom && p.Padding == new Padding(0, 10, 0, 12))!
-            .Height = _compact ? 0 : HotkeyRowH * 3 + 22;
-    }
-
-    private string? _lastGearTip;
-
-    /// <summary>Periodic refresh from the engine snapshot.</summary>
-    public void Update(IReadOnlyList<SessionView> owned, string? hotkeyError)
-    {
-        _slider.SetValueExternal(_def.Volume);
-        UpdateMute();
-        _name.Text = _def.Name;
-        _slider.Fill = ColorOf(_def);
-        string tip = string.IsNullOrWhiteSpace(hotkeyError) ? "Channel settings" : "⚠ " + hotkeyError;
-        if (tip != _lastGearTip)
+        var p = Themes.ThemeManager.Current;
+        IBrush bg = Color.TryParse(p.Chip, out var c1) ? new SolidColorBrush(c1) : Brushes.Gray;
+        IBrush tx = Color.TryParse(p.Text, out var c2) ? new SolidColorBrush(c2) : Brushes.White;
+        foreach (var ctrl in _chips.Children.OfType<Border>())
         {
-            Tips.SetToolTip(_gear, tip);   // SetToolTip is a window message — don't churn it every tick
-            _lastGearTip = tip;
-        }
-        DiffChips(owned);
-    }
-
-    private void DiffChips(IReadOnlyList<SessionView> owned)
-    {
-        var live = owned.Select(s => s.Exe).Distinct().ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var desired = _def.Executables.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        desired.UnionWith(live);
-
-        for (int i = _apps.Controls.Count - 1; i >= 0; i--)
-            if (_apps.Controls[i] is Label l && l.Tag is string exe && !desired.Contains(exe))
-                _apps.Controls.RemoveAt(i);
-
-        var existing = new Dictionary<string, Label>(StringComparer.OrdinalIgnoreCase);
-        foreach (var l in _apps.Controls.OfType<Label>())
-            if (l.Tag is string ex) existing[ex] = l;
-
-        foreach (var exe in desired)
-        {
-            if (!existing.TryGetValue(exe, out var chip))
-            {
-                chip = Chips.Make(exe, onRemove: e => ExeRemoved?.Invoke(e));
-                _apps.Controls.Add(chip);
-                _apps.Controls.SetChildIndex(chip, _apps.Controls.Count - 2); // above the "+ add" chip
-            }
-            chip.ForeColor = live.Contains(exe) ? Theme.Text : Theme.Muted;
-        }
-
-        bool hasAdd = _apps.Controls.ContainsKey("__add");
-        if (!hasAdd)
-        {
-            var add = new Label
-            {
-                Name = "__add",
-                Text = "+ add",
-                AutoSize = true,
-                ForeColor = Theme.Muted,
-                BackColor = Color.Transparent,
-                Padding = new Padding(7, 5, 7, 5),
-                Margin = new Padding(3),
-                Cursor = Cursors.Hand,
-                Font = new Font("Segoe UI", 10f),
-            };
-            add.Click += (_, _) => AddAppRequested?.Invoke(ChannelId);
-            _apps.Controls.Add(add);
+            ctrl.Background = bg;
+            if (ctrl.Child is StackPanel sp)
+                foreach (var t in sp.Children.OfType<TextBlock>()) t.Foreground = tx;
         }
     }
 
-    private void UpdateMute()
+    // ---------------- drag-drop ----------------
+
+    private void OnDragOver(object? sender, DragEventArgs e)
     {
-        _mute.Text = _def.Muted ? "🔇" : "🔊";
-        _mute.ForeColor = _def.Muted ? Theme.Danger : Theme.Text;
-        Tips.SetToolTip(_mute, _def.Muted ? "Unmute channel" : "Mute channel");
+        e.DragEffects = e.Data.Contains(DataFormats.Text) ? DragDropEffects.Copy : DragDropEffects.None;
+        if (e.DragEffects != DragDropEffects.None)
+        {
+            // drag-over: the box fills with a lighter version of its group color
+            Background = new ImmutableSolidColorBrush(LighterColor(GroupHex, 0.30f));
+            BorderBrush = Solid(GroupHex);
+        }
+        e.Handled = true;
+        SONO.Core.Diagnostics.Log.Write($"dragover {_ch.Name} effects={e.DragEffects}");
     }
 
-    protected override void OnResize(EventArgs e)
+    private void OnDragLeave(object? sender, DragEventArgs e)
     {
-        base.OnResize(e);
-        if (Width <= 1 || Height <= 1) return;   // transient zero-size during table layout
-        Region = new Region(SliderBar.RoundRect(0, 0, Width, Height, 12));
+        // Avalonia fires spurious DragLeave during DragOver (re-hit-test on visual change) —
+        // only honor it when the cursor truly left this card's bounds
+        Win32Point p = default;
+        GetCursorPos(ref p);
+        var topLeft = this.PointToScreen(new Point(0, 0));
+        // Screen pixel → local DIP; RenderScaling via TopLevel (1.0 fallback)
+        double scale = (VisualRoot as TopLevel)?.RenderScaling ?? 1.0;
+        var localX = (p.X - topLeft.X) / scale;
+        var localY = (p.Y - topLeft.Y) / scale;
+        if (localX >= 0 && localY >= 0 && localX <= Bounds.Width && localY <= Bounds.Height)
+        {
+            e.Handled = true;
+            return;   // still inside — ignore the spurious leave
+        }
+        RefreshTheme();   // cursor left this card — clear the tint
+        e.Handled = true;
+        SONO.Core.Diagnostics.Log.Write($"dragleave {_ch.Name}");
     }
 
-    protected override void OnPaint(PaintEventArgs e)
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct Win32Point { public int X, Y; }
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetCursorPos(ref Win32Point pt);
+
+    private void OnDrop(object? sender, DragEventArgs e)
     {
-        if (Width <= 1 || Height <= 1) return;
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        using var bg = SliderBar.RoundRect(0, 0, Width - 1, Height - 1, 12);
-        using (var b = new SolidBrush(Theme.Card)) g.FillPath(b, bg);
-        using var strip = SliderBar.RoundRect(0, 0, 6, Height, 3);
-        using (var b = new SolidBrush(ColorOf(_def))) g.FillPath(b, strip);
+        RefreshTheme();   // clear the drag-over tint
+        SONO.Core.Diagnostics.Log.Write($"drop {_ch.Name} text={e.Data.GetText()}");
+        if (e.Data.GetText() is string exe && !string.IsNullOrWhiteSpace(exe))
+        {
+            _vm.AssignExe(exe, _ch.Id);
+            e.Handled = true;
+        }
     }
 
-    private void ShowGearMenu()
-    {
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("Color…", null, (_, _) =>
-        {
-            var colorMenu = new ContextMenuStrip();
-            foreach (var hex in Theme.Palette)
-            {
-                var item = new ToolStripMenuItem("■") { ForeColor = ColorTranslator.FromHtml(hex), BackColor = Theme.Card };
-                var captured = hex;
-                item.Click += (_, _) => { _def.ColorHex = captured; _slider.Fill = ColorOf(_def); Invalidate(); DefinitionEdited?.Invoke(ChannelId); };
-                colorMenu.Items.Add(item);
-            }
-            colorMenu.Show(Cursor.Position);
-        });
-        menu.Show(_gear, new Point(0, _gear.Height));
-    }
-}
+    private static IBrush TintBrush(string hex) =>
+        Color.TryParse(hex, out var c) ? new ImmutableSolidColorBrush(Color.FromArgb(48, c.R, c.G, c.B)) : Brushes.Transparent;
 
-/// <summary>Tiny one-field modal input — fixed dialog, dark material styling, never resizable.</summary>
-internal static class PromptDialog
-{
-    public static string? Show(IWin32Window owner, string title, string initial)
+    // ---------------- theme ----------------
+
+    private string GroupHex
     {
-        using var form = new Form
+        get
         {
-            Text = title,
-            FormBorderStyle = FormBorderStyle.FixedDialog,
-            StartPosition = FormStartPosition.CenterParent,
-            ClientSize = new Size(320, 96),
-            MaximizeBox = false,
-            MinimizeBox = false,
-            ShowInTaskbar = false,
-            ShowIcon = false,
-            BackColor = Theme.Card,
-        };
-        TitleBarTheme.Apply(form);
-        var box = new TextBox
+            // theme GroupBgs 0-3 = Game/Chat/Media/Aux (position in the channel list)
+            var gb = Themes.ThemeManager.Current.GroupBgs;
+            int i = Math.Max(0, _vm.Channels.IndexOf(_ch));
+            return i < gb.Length ? gb[i] : _ch.ColorHex;
+        }
+    }
+
+    public void RefreshTheme()
+    {
+        var p = Themes.ThemeManager.Current;
+        IBrush B(string hex) => Color.TryParse(hex, out var c) ? new SolidColorBrush(c) : Brushes.Gray;
+        // neutral elevated box + colored outline + colored dot: group identity without clashing fills
+        Background = B(p.Elevated);
+        BorderBrush = Solid(GroupHex);
+        BorderThickness = new Thickness(1.5);
+        _dot.Fill = Solid(GroupHex);
+        _name.Foreground = B(p.Text);
+        _pct.Foreground = B(p.Text);
+        _slider.Foreground = Solid(GroupHex);
+        _thumbBrush = Lighter(GroupHex, 0.45f);   // thumb = lighter variant for contrast
+        if (_thumb is not null) _thumb.Background = _thumbBrush;
+        // inner boxes cache their fill — restyle them too
+        foreach (var box in (Child as Grid)?.Children.OfType<Border>() ?? Enumerable.Empty<Border>())
+            box.Background = BoxFill;
+        StyleChips();
+    }
+
+    /// <summary>Opaque lerp between two hex colors — the tonal-blend look, no alpha stacking.</summary>
+    private static IBrush Blend(string baseHex, string hex, float t)
+    {
+        Color.TryParse(baseHex, out var b);
+        Color.TryParse(hex, out var c);
+        return new ImmutableSolidColorBrush(Color.FromArgb(255,
+            (byte)(b.R + (c.R - b.R) * t),
+            (byte)(b.G + (c.G - b.G) * t),
+            (byte)(b.B + (c.B - b.B) * t)));
+    }
+
+    private static IBrush Solid(string hex) =>
+        Color.TryParse(hex, out var c) ? new ImmutableSolidColorBrush(c) : Brushes.White;
+
+    /// <summary>Lightened Color (toward white) for drag-over states.</summary>
+    private static Color LighterColor(string hex, float ratio)
+    {
+        Color.TryParse(hex, out var c);
+        return Color.FromArgb(255,
+            (byte)(c.R + (255 - c.R) * ratio),
+            (byte)(c.G + (255 - c.G) * ratio),
+            (byte)(c.B + (255 - c.B) * ratio));
+    }
+
+    private static Color Parse(string hex) => Color.TryParse(hex, out var c) ? c : Colors.Gray;
+
+    /// <summary>Darker Color (toward black) — slider fill derived from the box color.</summary>
+    private static IBrush DarkerBrush(string hex, float ratio)
+    {
+        var c = Parse(hex);
+        return new ImmutableSolidColorBrush(Color.FromArgb(255,
+            (byte)(c.R * (1 - ratio)),
+            (byte)(c.G * (1 - ratio)),
+            (byte)(c.B * (1 - ratio))));
+    }
+
+    /// <summary>Lighten toward white by ratio (0 = same, 1 = white) — thumb gets a
+    /// lighter shade of its channel color so it reads as part of the slider.</summary>
+    private static IBrush Lighter(string hex, float ratio)
+    {
+        if (!Color.TryParse(hex, out var c)) return Brushes.White;
+        return new ImmutableSolidColorBrush(Color.FromArgb(c.A,
+            (byte)(c.R + (255 - c.R) * ratio),
+            (byte)(c.G + (255 - c.G) * ratio),
+            (byte)(c.B + (255 - c.B) * ratio)));
+    }
+
+    /// <summary>Depth-first search for the templated Thumb via the public logical tree
+    /// (VisualChildren is protected; TemplateApplied gives us the tree through Content/Child).</summary>
+    private static Thumb? FindThumb(object? node)
+    {
+        switch (node)
         {
-            Left = 14, Top = 16, Width = 292,
-            Text = initial,
-            BackColor = Theme.Field,
-            ForeColor = Theme.Text,
-            BorderStyle = BorderStyle.None,
-            Font = new Font("Segoe UI", 10.5f),
-        };
-        var ok = new Button
-        {
-            Text = "OK", Left = 233, Top = 52, Width = 73, Height = 28,
-            DialogResult = DialogResult.OK,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Theme.Accent,
-            ForeColor = Theme.Bg,
-            Cursor = Cursors.Hand,
-        };
-        ok.FlatAppearance.BorderSize = 0;
-        form.Controls.Add(box);
-        form.Controls.Add(ok);
-        form.AcceptButton = ok;
-        form.CancelButton = ok;
-        return form.ShowDialog(owner) == DialogResult.OK && !string.IsNullOrWhiteSpace(box.Text) ? box.Text.Trim() : null;
+            case Thumb t: return t;
+            case ContentControl cc: return FindThumb(cc.Content);
+            case Panel p:
+                foreach (var child in p.Children)
+                {
+                    var f = FindThumb(child);
+                    if (f is not null) return f;
+                }
+                return null;
+            case Border b: return FindThumb(b.Child);
+            default: return null;
+        }
     }
 }

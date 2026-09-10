@@ -1,105 +1,76 @@
-using SONO.Core.Audio;
-using SONO.Core.Settings;
-
-namespace SONO.App;
+using SONO.App;
+using SONO.Core.Diagnostics;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 
 internal static class Program
 {
     [STAThread]
     private static void Main(string[] args)
     {
-        ApplicationConfiguration.Initialize();
-
-        // explicit taskbar identity: the taskbar groups SONO under one AUMID and takes the
-        // icon from a stable source — without this, re-published exes at the same path can
-        // surface Explorer's cached default icon (the white-window glyph)
-        AppUserModel.Set("komabear.SONO.Mixer");
-
-        // survive UI/background-thread exceptions: log them, keep the mixer alive
-        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-        Application.ThreadException += (_, e) =>
-            SONO.Core.Diagnostics.Log.Write($"UI thread exception: {e.Exception}");
-        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
-            SONO.Core.Diagnostics.Log.Write($"FATAL unhandled: {e.ExceptionObject}");
-
         bool autostartRequested = args.Contains("--autostart", StringComparer.OrdinalIgnoreCase)
                                   || args.Contains("/autostart", StringComparer.OrdinalIgnoreCase);
+
+        // single instance: Local\SONO.SingleInstance — second instance signals the first, then exits
         using var mutex = new Mutex(true, @"Local\SONO.SingleInstance", out bool firstInstance);
+        EventWaitHandle? showSignal = null;
         if (!firstInstance)
-        {
-            MessageBox.Show("SONO is already running. Look for its icon in the system tray.",
-                "SONO", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return;
-        }
-
-        var settings = SettingsStore.Load();
-        Theme.Apply(ThemeCatalog.Get(settings.ThemeId));
-        var engine = new AudioEngine();
-        var hotkeys = new HotkeyManager();
-
-        // autostart: write the Run key ONCE, on the very first launch of a given exe.
-        // Re-asserting on every launch (the old behavior) stomped the user's "off" choice
-        // AND re-pointed the entry whenever the app was launched from a different path
-        // (e.g. a dev build), leaving a stale entry after uninstall.
-        // After that, the in-app ⚙ toggle (settings.StartWithWindows) is the only writer.
-        // NOTE: nothing here RE-creates the entry if it's missing — uninstall/settings-off
-        // stay respected even if settings.json still says StartWithWindows=true.
-        if (autostartRequested && !Core.SystemIntegrations.Autostart.IsEnabled())
         {
             try
             {
-                Core.SystemIntegrations.Autostart.Set(true);
-                settings.AutostartConfigured = true;
-                SettingsStore.Save(settings);
+                showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\SONO.ShowSignal");
+                showSignal.Set();
             }
-            catch { /* non-fatal */ }
+            catch { }
+            return;
         }
-
-        // ApplicationContext lets us hot-swap the main form (theme changes) while the
-        // audio engine and hotkeys keep running.
-        Application.Run(new SonoContext(engine, hotkeys, settings, autostartRequested));
-        GC.KeepAlive(mutex);
-    }
-}
-
-internal sealed class SonoContext : ApplicationContext
-{
-    private readonly AudioEngine _engine;
-    private readonly HotkeyManager _hotkeys;
-    private readonly AppSettings _settings;
-    private readonly bool _boot;
-
-    public SonoContext(AudioEngine engine, HotkeyManager hotkeys,
-        AppSettings settings, bool boot)
-    {
-        _engine = engine;
-        _hotkeys = hotkeys;
-        _settings = settings;
-        _boot = boot;
-        ShowMain();
-    }
-
-    private void ShowMain()
-    {
-        var form = new MixerForm(_engine, _hotkeys, _settings, _boot);
-        if (_hasBounds)
+        try
         {
-            form.StartPosition = FormStartPosition.Manual;
-            form.Bounds = _bounds;
-            form.WindowState = _state;
+            showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\SONO.ShowSignal", out bool createdNew);
         }
-        form.UiRestartRequested += () =>
-        {
-            _bounds = form.Bounds;          // seamless swap: keep size/position/state
-            _state = form.WindowState;
-            _hasBounds = true;
-            form.ForceClose();
-        };
-        form.FormClosed += (_, _) => { if (!form.SuppressCleanup) ExitThread(); else ShowMain(); };
-        form.Show();
-    }
+        catch { showSignal = null; }
 
-    private Rectangle _bounds;
-    private FormWindowState _state;
-    private bool _hasBounds;
+        // global exception logging — the mixer must survive and always leave a trace
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            Log.Write($"FATAL unhandled: {e.ExceptionObject}");
+        System.Threading.Tasks.TaskScheduler.UnobservedTaskException += (_, e) =>
+        { Log.Write($"unobserved task: {e.Exception}"); e.SetObserved(); };
+
+        // once-ever autostart Run-key write (first --autostart launch only; after that the
+        // in-app ⚙ toggle is the only writer — never re-point the entry on later launches)
+        try
+        {
+            if (autostartRequested && !SONO.Core.SystemIntegrations.Autostart.IsEnabled())
+            {
+                var s = SONO.Core.Settings.SettingsStore.Load();
+                if (!s.AutostartConfigured)
+                {
+                    SONO.Core.SystemIntegrations.Autostart.Set(true);
+                    s.AutostartConfigured = true;
+                    SONO.Core.Settings.SettingsStore.Save(s);
+                    Log.Write("autostart Run key written (first --autostart launch)");
+                }
+            }
+        }
+        catch (Exception ex) { Log.Write($"autostart configure: {ex.Message}"); }
+
+        App.StartMinimized = autostartRequested;
+        App.ShowSignal = showSignal;
+
+        Log.Write($"SONO starting (autostart={autostartRequested}, firstInstance={firstInstance})");
+
+        try
+        {
+            App.Hotkeys = new HotkeyManager();
+            Avalonia.AppBuilder.Configure<App>()
+                .UsePlatformDetect()
+                .StartWithClassicDesktopLifetime(args);
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"startup fatal: {ex}");
+            throw;
+        }
+        Log.Write("SONO exited cleanly");
+    }
 }
