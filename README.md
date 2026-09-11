@@ -54,7 +54,7 @@ all apps play straight to your normal output  ◄┘
 ## Setup — step by step
 
 1. **Install** — download
-   [`SONO-Setup.exe`](https://github.com/komabear/SONO-mixer/releases/download/v1.1.0/SONO-Setup.exe)
+   [`SONO-Setup.exe`](https://github.com/komabear/SONO-mixer/releases/download/v2.0.0/SONO-Setup.exe)
    from [Releases](https://github.com/komabear/SONO-mixer/releases) and run it. That's the
    whole setup: no drivers, no audio devices, no restarts, no admin prompts.
 2. **Assign apps** — start an app and play something; it appears in the Applications
