@@ -8,23 +8,23 @@ public sealed class Palette
 {
     public required string Id { get; init; }
     public required string Name { get; init; }
-    public string Bg { get; init; } = "";
-    public string Card { get; init; } = "";
-    public string Elevated { get; init; } = "";
-    public string Field { get; init; } = "";
-    public string FieldFocus { get; init; } = "";
-    public string Chip { get; init; } = "";
-    public string Border { get; init; } = "";
-    public string Text { get; init; } = "";
-    public string Muted { get; init; } = "";
-    public string Accent { get; init; } = "";
-    public string Danger { get; init; } = "";
-    public string[] Swatches { get; init; } = [];
+    public string Bg { get; set; } = "";
+    public string Card { get; set; } = "";
+    public string Elevated { get; set; } = "";
+    public string Field { get; set; } = "";
+    public string FieldFocus { get; set; } = "";
+    public string Chip { get; set; } = "";
+    public string Border { get; set; } = "";
+    public string Text { get; set; } = "";
+    public string Muted { get; set; } = "";
+    public string Accent { get; set; } = "";
+    public string Danger { get; set; } = "";
+    public string[] Swatches { get; set; } = [];
     /// <summary>Group box background colors (Game/Chat/Media/Aux) — blue/green/pink/yellow,
     /// tuned per theme. Drag-over = lighter variant; slider fill = darker variant.</summary>
-    public string[] GroupBgs { get; init; } = ["#5B8DEF", "#65D97A", "#F06BB3", "#F5C453"];
+    public string[] GroupBgs { get; set; } = ["#5B8DEF", "#65D97A", "#F06BB3", "#F5C453"];
     /// <summary>Logo shown on the Applications panel (avares URI); Miku overrides.</summary>
-    public string LogoUri { get; init; } = "avares://SONO.App/Assets/logo.png";
+    public string LogoUri { get; set; } = "avares://SONO.App/Assets/logo.png";
 }
 
 public static class ThemeCatalog
@@ -121,8 +121,35 @@ public static class ThemeCatalog
             Chip = "#52585C", Border = "#5D6468", Text = "#BEC8D1", Muted = "#8B979E",
             Accent = "#86CECB", Danger = "#E12885",
             Swatches = ["#86CECB", "#137A7F", "#BEC8D1", "#E12885", "#5B8FA8", "#7DE8DD", "#9FB4BD", "#4FC1E9"],
-            GroupBgs = ["#4FC1E9", "#7DE8DD", "#E12885", "#F5D76E"],
+            GroupBgs = ["#4FC1E9", "#7DE8DD", "#E12885", "#4A4A4A"],   // Aux: black-based
             LogoUri = "avares://SONO.App/Assets/logo-miku.png",
+        },
+        new Palette
+        {
+            Id = "custom-1", Name = "Custom 1",
+            Bg = "#0F1420", Card = "#17203A", Elevated = "#1E2A4A", Field = "#24325A", FieldFocus = "#2C3E6E",
+            Chip = "#24325A", Border = "#2C3E6E", Text = "#E4EAF7", Muted = "#7C89AC",
+            Accent = "#4D8DFF", Danger = "#FF5C7A",
+            Swatches = ["#4D8DFF", "#38E0C8", "#C77DFF", "#FFB454"],
+            GroupBgs = ["#3D6FE0", "#2FBF9F", "#B45CDB", "#E09B3D"],
+        },
+        new Palette
+        {
+            Id = "custom-2", Name = "Custom 2",
+            Bg = "#141414", Card = "#1C1C1C", Elevated = "#242424", Field = "#2C2C2C", FieldFocus = "#383838",
+            Chip = "#2C2C2C", Border = "#383838", Text = "#EAEAEA", Muted = "#8A8A8A",
+            Accent = "#FF8A3D", Danger = "#E5484D",
+            Swatches = ["#FF8A3D", "#9FE870", "#FF6EB5", "#FFE066"],
+            GroupBgs = ["#E07A3F", "#7FBF4F", "#D4568C", "#D4B14F"],
+        },
+        new Palette
+        {
+            Id = "custom-3", Name = "Custom 3",
+            Bg = "#1A1625", Card = "#231E33", Elevated = "#2C2542", Field = "#352C50", FieldFocus = "#403462",
+            Chip = "#352C50", Border = "#403462", Text = "#EDE7F8", Muted = "#9A8CB8",
+            Accent = "#A78BFA", Danger = "#FB7185",
+            Swatches = ["#A78BFA", "#67E8F9", "#F0ABFC", "#FDE68A"],
+            GroupBgs = ["#8B5CF6", "#22B8CF", "#E558B0", "#D4A72C"],
         },
     ];
 

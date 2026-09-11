@@ -92,6 +92,12 @@ public sealed class MixerVm : ObservableObject
 
     private void RefreshApps(EngineSnapshot snap)
     {
+        // Apps is UI-bound (ObservableCollection) — all mutations must happen on the UI thread
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => RefreshAppsCore(snap));
+    }
+
+    private void RefreshAppsCore(EngineSnapshot snap)
+    {
         // live = apps with a session right now; pinned rows (added via the + picker) survive
         var live = snap.Sessions.Where(s => s.Exe.Length > 0 && s.Exe != "unknown").ToList();
 
@@ -131,6 +137,29 @@ public sealed class MixerVm : ObservableObject
                 if (exe != "system" && !Settings.KnownApps.Contains(exe, StringComparer.OrdinalIgnoreCase))
                     Settings.KnownApps.Add(exe);
         }
+
+        SortApps();
+    }
+
+    /// <summary>Grouped apps first (by channel order), then ungrouped — alphabetical inside each tier.
+    /// Runs only when the ordering actually changes, so rows don't reshuffle under the cursor.</summary>
+    private void SortApps()
+    {
+        List<AppRowVm> sorted;
+        lock (Settings)
+        {
+            var order = Channels.Select(c => c.Id).ToList();
+            sorted = Apps
+                .OrderByDescending(r => r.Group is not null)
+                .ThenBy(r => r.Group is null ? int.MaxValue : order.IndexOf(r.Group))
+                .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        bool changed = Apps.Count != sorted.Count
+            || Apps.Where((r, i) => !ReferenceEquals(r, sorted[i])).Any();
+        if (!changed) return;
+        Apps.Clear();
+        foreach (var r in sorted) Apps.Add(r);
     }
 
     // ---------------- user actions (UI thread) ----------------
@@ -221,10 +250,10 @@ public sealed class MixerVm : ObservableObject
                 Settings.KnownApps.Add(exe);
         }
         Save();
-        // show it immediately even if it has no live session
-        Apps.Add(new AppRowVm(new SessionView(
+        // show it immediately even if it has no live session (UI thread — Apps is UI-bound)
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => Apps.Add(new AppRowVm(new SessionView(
             Key: "pinned:" + exe, Exe: exe, DisplayName: exe, Pid: 0, IsSystem: false,
-            State: "Inactive", ChannelId: null, Volume: 1f, Mute: false)));
+            State: "Inactive", ChannelId: null, Volume: 1f, Mute: false))));
     }
 
     /// <summary>Apps available for the panel + picker: everything ever seen, not pinned yet.</summary>

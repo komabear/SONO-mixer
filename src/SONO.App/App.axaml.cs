@@ -24,6 +24,56 @@ public class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // ColorView templates live in the ColorPicker assembly; include its Fluent theme at
+        // runtime (the XAML compiler can't resolve the avres:// URI at build time)
+        try
+        {
+            // ColorView's template lives in the ColorPicker assembly as ResourceDictionaries.
+            // Each leaf parses to a ResourceDictionary (resources + nested ControlThemes) that
+            // must go into Resources.MergedDictionaries for the {TemplateBinding} lookups to resolve.
+            var colorPickerAsm = typeof(Avalonia.Controls.ColorView).Assembly;
+            string[] leaves =
+            {
+                "Avalonia.Controls.ColorPicker.Themes.Fluent.ColorView.xaml",       // defines shared converters
+                "Avalonia.Controls.ColorPicker.Themes.Fluent.ColorSpectrum.xaml",
+                "Avalonia.Controls.ColorPicker.Themes.Fluent.ColorSlider.xaml",
+                "Avalonia.Controls.ColorPicker.Themes.Fluent.ColorPreviewer.xaml",
+            };
+            foreach (var resName in leaves)
+            {
+                using var stream = colorPickerAsm.GetManifestResourceStream(resName)
+                    ?? throw new InvalidOperationException($"{resName} missing");
+                using var sr = new System.IO.StreamReader(stream);
+                if (AvaloniaRuntimeXamlLoader.Parse(sr.ReadToEnd()) is Avalonia.Controls.ResourceDictionary rd)
+                    Resources.MergedDictionaries.Add(rd);
+            }
+            // The aggregate Fluent.xaml DEFINES shared resources (EnumToBoolConverter etc.) the
+            // templates use via StaticResource, but its own MergeResourceInclude nodes point at
+            // avares URIs the runtime parser can't resolve. Parse it with those nodes stripped.
+            using var agg = colorPickerAsm.GetManifestResourceStream("Avalonia.Controls.ColorPicker.Themes.Fluent.Fluent.xaml");
+            using var aggSr = new System.IO.StreamReader(agg);
+            var aggText = aggSr.ReadToEnd();
+            aggText = System.Text.RegularExpressions.Regex.Replace(
+                aggText,
+                @"\s*<MergeResourceInclude[^>]*/>",
+                "");
+            var aggParsed = AvaloniaRuntimeXamlLoader.Parse(aggText);
+            SONO.Core.Diagnostics.Log.Write($"colorpicker: aggregate parsed type={aggParsed?.GetType().FullName}");
+            switch (aggParsed)
+            {
+                case Avalonia.Styling.Styles styles:
+                    Styles.Add(styles);
+                    break;
+                case Avalonia.Controls.ResourceDictionary rd2:
+                    Resources.MergedDictionaries.Add(rd2);
+                    break;
+            }
+            // the aggregate also defines shared resources (EnumToBoolConverter etc.) referenced
+            // by the leaf templates — register its resource entries without re-resolving its includes
+            // (converters + shared keys live in ColorView.xaml, loaded last above)
+        }
+        catch (Exception ex) { SONO.Core.Diagnostics.Log.Write($"colorpicker theme: {ex.Message}"); }
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var settings = SettingsStore.Load();
