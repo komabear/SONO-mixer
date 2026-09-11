@@ -29,6 +29,7 @@ public sealed class ChannelCard : Border
     private readonly HotkeyBox _hkDown, _hkUp, _hkMute;
     private readonly WrapPanel _chips;
     private bool _draggingSlider;
+    private bool _dragHover;
     private readonly System.Diagnostics.Stopwatch _liveThrottle = new();
     private Thumb? _thumb;
     private IBrush? _thumbBrush;
@@ -290,17 +291,16 @@ public sealed class ChannelCard : Border
 
     // ---------------- drag-drop ----------------
 
+    
     private void OnDragOver(object? sender, DragEventArgs e)
     {
         e.DragEffects = e.Data.Contains(DataFormats.Text) ? DragDropEffects.Copy : DragDropEffects.None;
-        if (e.DragEffects != DragDropEffects.None)
+        if (e.DragEffects != DragDropEffects.None && !_dragHover)
         {
-            // drag-over: the box fills with a lighter version of its group color
-            Background = new ImmutableSolidColorBrush(LighterColor(GroupHex, 0.30f));
-            BorderBrush = Solid(GroupHex);
+            _dragHover = true;
+            RefreshTheme();   // single source of truth for backgrounds
         }
         e.Handled = true;
-        SONO.Core.Diagnostics.Log.Write($"dragover {_ch.Name} effects={e.DragEffects}");
     }
 
     private void OnDragLeave(object? sender, DragEventArgs e)
@@ -310,7 +310,6 @@ public sealed class ChannelCard : Border
         Win32Point p = default;
         GetCursorPos(ref p);
         var topLeft = this.PointToScreen(new Point(0, 0));
-        // Screen pixel → local DIP; RenderScaling via TopLevel (1.0 fallback)
         double scale = (VisualRoot as TopLevel)?.RenderScaling ?? 1.0;
         var localX = (p.X - topLeft.X) / scale;
         var localY = (p.Y - topLeft.Y) / scale;
@@ -319,9 +318,9 @@ public sealed class ChannelCard : Border
             e.Handled = true;
             return;   // still inside — ignore the spurious leave
         }
+        _dragHover = false;
         RefreshTheme();   // cursor left this card — clear the tint
         e.Handled = true;
-        SONO.Core.Diagnostics.Log.Write($"dragleave {_ch.Name}");
     }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
@@ -331,6 +330,7 @@ public sealed class ChannelCard : Border
 
     private void OnDrop(object? sender, DragEventArgs e)
     {
+        _dragHover = false;
         RefreshTheme();   // clear the drag-over tint
         SONO.Core.Diagnostics.Log.Write($"drop {_ch.Name} text={e.Data.GetText()}");
         if (e.Data.GetText() is string exe && !string.IsNullOrWhiteSpace(exe))
@@ -360,8 +360,9 @@ public sealed class ChannelCard : Border
     {
         var p = Themes.ThemeManager.Current;
         IBrush B(string hex) => Color.TryParse(hex, out var c) ? new SolidColorBrush(c) : Brushes.Gray;
-        // card body = the main window background (dark gray); identity comes from the outline
-        Background = B(p.Bg);
+        // card body = the main window background (dark gray); identity comes from the outline.
+        // While a drag hovers, fill with a lighter version of the group color
+        Background = _dragHover ? new ImmutableSolidColorBrush(LighterColor(GroupHex, 0.30f)) : B(p.Bg);
         BorderBrush = Solid(GroupHex);
         BorderThickness = new Thickness(1.5);
         _dot.Fill = Solid(GroupHex);

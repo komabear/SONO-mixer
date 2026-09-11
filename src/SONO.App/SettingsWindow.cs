@@ -107,6 +107,11 @@ public sealed class SettingsWindow : Window
 
         // ---- theme (compact): dropdown + grid of pickers; 10 built-ins + 3 customs, all editable ----
         var allThemes = CustomThemeStore.AllWithCustoms();
+        // PRISTINE snapshot for Reset: catalog entries are mutated in place during editing,
+        // so the "original" must be copied NOW, before any picker touches them
+        var pristineById = ThemeCatalog.All.ToDictionary(
+            t => t.Id,
+            t => CustomThemeStore.CloneAsCustom(t, "__snap"));
         string themeId;
         lock (_vm.Settings) themeId = _vm.Settings.ThemeId;
         var SyncAll = new List<Action>();   // swatch refreshers, run on theme switch
@@ -149,13 +154,27 @@ public sealed class SettingsWindow : Window
             var customs = CustomThemeStore.Load();
             var removed = customs.RemoveAll(t => t.Id == currentId);
             if (removed > 0) CustomThemeStore.Save(customs);
-            // re-apply: allThemes may hold the stale override — pull the pristine catalog entry
-            var pristine = ThemeCatalog.All.FirstOrDefault(t => t.Id == currentId) ?? ThemeCatalog.Default;
+            // restore from the PRE-EDIT snapshot (the catalog object itself was mutated in
+            // place, so it can't be used as "pristine"), replace the stale entry in allThemes
+            var pristine = pristineById.TryGetValue(currentId, out var snap)
+                ? new Palette
+                {
+                    Id = currentId,
+                    Name = allThemes.FirstOrDefault(t => t.Id == currentId)?.Name ?? snap.Name,
+                    Bg = snap.Bg, Card = snap.Card, Elevated = snap.Elevated,
+                    Field = snap.Field, FieldFocus = snap.FieldFocus, Chip = snap.Chip,
+                    Border = snap.Border, Text = snap.Text, Muted = snap.Muted,
+                    Accent = snap.Accent, Danger = snap.Danger,
+                    Swatches = snap.Swatches.ToArray(), GroupBgs = snap.GroupBgs.ToArray(),
+                    LogoUri = snap.LogoUri,
+                }
+                : ThemeCatalog.Default;
+            var liveIdx = allThemes.FindIndex(t => t.Id == currentId);
+            if (liveIdx >= 0) allThemes[liveIdx] = pristine;
             ThemeManager.Apply(pristine);
             lock (_vm.Settings) _vm.Settings.ThemeId = pristine.Id;
             _vm.Save();
-            // sync swatches to the restored colors
-            foreach (var r in SyncAll) r();
+            foreach (var r in SyncAll) r();   // force-refresh swatches + pickers
             ThemeApplied?.Invoke();
         };
         themeRow.Children.Add(resetBtn);
@@ -167,8 +186,8 @@ public sealed class SettingsWindow : Window
             var lbl = new TextBlock { Text = label, FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
             var view = new Avalonia.Controls.ColorView
             {
-                Width = 300,
-                Height = 340,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
                 ColorModel = Avalonia.Controls.ColorModel.Rgba,
                 ColorSpectrumComponents = Avalonia.Controls.ColorSpectrumComponents.HueSaturation,
             };
@@ -181,15 +200,22 @@ public sealed class SettingsWindow : Window
                 if (CurrentTheme().Id.StartsWith("custom-"))
                     CustomThemeStore.Save(allThemes.Where(t => t.Id.StartsWith("custom-")));
             };
-            // host in a sized panel — a bare ColorView as Flyout.Content can present empty
+            // host: no fixed size — measure the ColorView's natural size, pad around it
             var host = new Border
             {
                 Background = MainWindow.Res("SonoElevatedBrush"),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(10),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(14),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
                 Child = view,
             };
-            var flyout = new Flyout { Placement = PlacementMode.Right, Content = host };
+            var flyout = new Flyout
+            {
+                Placement = PlacementMode.Right,
+                Content = host,
+                HorizontalOffset = 8,
+            };
             FlyoutBase.SetAttachedFlyout(swatch, flyout);
             swatch.PointerPressed += (_, _) =>
             {
@@ -199,7 +225,10 @@ public sealed class SettingsWindow : Window
             SyncAll.Add(() =>
             {
                 if (Color.TryParse(get(CurrentTheme()), out Color c))
+                {
                     swatch.Background = new SolidColorBrush(c);
+                    view.Color = c;   // reopened picker shows the restored color
+                }
             });
             if (Color.TryParse(get(CurrentTheme()), out Color c0))
                 swatch.Background = new SolidColorBrush(c0);

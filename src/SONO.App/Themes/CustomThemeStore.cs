@@ -18,7 +18,13 @@ public static class CustomThemeStore
         try
         {
             if (File.Exists(FilePath))
-                return JsonSerializer.Deserialize<List<Palette>>(File.ReadAllText(FilePath), JsonOpts) ?? [];
+            {
+                var list = JsonSerializer.Deserialize<List<Palette>>(File.ReadAllText(FilePath), JsonOpts) ?? [];
+                SONO.Core.Diagnostics.Log.Write($"custom themes loaded: {list.Count}");
+                foreach (var t in list)
+                    SONO.Core.Diagnostics.Log.Write($"  {t.Id} GroupBgs=[{string.Join("/", t.GroupBgs)}]");
+                return list;
+            }
         }
         catch (Exception ex) { SONO.Core.Diagnostics.Log.Write($"custom themes load: {ex.Message}"); }
         return [];
@@ -28,10 +34,21 @@ public static class CustomThemeStore
     {
         try
         {
-            // invariant: themes.json holds ONLY custom slots (never built-ins)
-            var customs = themes.Where(t => t.Id.StartsWith("custom-")).ToList();
+            // themes.json holds ALL slots that differ from their catalog defaults (custom slots
+            // always, built-ins only when the user edits them)
+            var customs = themes
+                .Where(t =>
+                {
+                    var builtin = ThemeCatalog.All.FirstOrDefault(b => b.Id == t.Id);
+                    if (builtin is null) return true;                    // custom slot
+                    return !builtin.GroupBgs.SequenceEqual(t.GroupBgs)   // built-in with edits
+                        || builtin.Bg != t.Bg || builtin.Card != t.Card
+                        || builtin.Elevated != t.Elevated || builtin.Text != t.Text;
+                })
+                .ToList();
             Directory.CreateDirectory(Dir);
             File.WriteAllText(FilePath, JsonSerializer.Serialize(customs, JsonOpts));
+            SONO.Core.Diagnostics.Log.Write($"custom themes saved: {string.Join(", ", customs.Select(t => t.Id + "=" + string.Join("/", t.GroupBgs)))}");
         }
         catch (Exception ex) { SONO.Core.Diagnostics.Log.Write($"custom themes save: {ex.Message}"); }
     }
