@@ -42,6 +42,9 @@ public sealed class MainWindow : Window
     private bool _reallyClosing;
     private SettingsWindow? _settingsWin;
     private bool _outputBoxGuard;
+    private Button? _gearBtn;
+    private Border? _controlBox;
+    private Border? _logoBox;
 
     public MainWindow(MixerVm vm)
     {
@@ -52,48 +55,21 @@ public sealed class MainWindow : Window
         FontFamily = new FontFamily("Segoe UI Variable Display, Segoe UI, Inter");
         RefreshTheme();
 
-        // ---------- header ----------
-        var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
-        var logo = new Image { Width = 28, Height = 28 };
-        UpdateLogo(logo);
-        titleRow.Children.Add(logo);
-        titleRow.Children.Add(new TextBlock { Text = "SONO", FontSize = 18, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center });
-        titleRow.Children.Add(new TextBlock { Text = "group mixer", Classes = { "muted" }, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 3, 0, 0) });
-
-        var gear = new Button { Content = "⚙", Classes = { "sono" }, FontSize = 16, Width = 42, Height = 34, VerticalAlignment = VerticalAlignment.Center };
-        gear.Click += (_, _) => OpenSettings();
-
-        _outputBox.SelectionChanged += OnOutputSelected;
-        var outLabel = new TextBlock { Text = "OUTPUT", Classes = { "muted" }, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
-        var outPanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        outPanel.Children.Add(outLabel);
-        outPanel.Children.Add(_outputBox);
-
-        var headerDock = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(titleRow, Dock.Left);
-        DockPanel.SetDock(gear, Dock.Right);
-        headerDock.Children.Add(titleRow);
-        headerDock.Children.Add(gear);
-        headerDock.Children.Add(outPanel);
-        var header = new Border { Classes = { "card" }, Margin = new Thickness(16, 16, 16, 10), Child = headerDock };
-
-        // ---------- body ----------
-        var body = new Grid { Margin = new Thickness(16, 2, 16, 10) };
+        // ---------- body (no header card) ----------
+        var body = new Grid { Margin = new Thickness(16, 16, 16, 10) };
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14, GridUnitType.Pixel) });   // gutter
-        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(250, GridUnitType.Pixel) });
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300, GridUnitType.Pixel) });
 
         var leftCard = new Border { Classes = { "card" }, Child = BuildChannelGrid() };
         Grid.SetColumn(leftCard, 0);
-        var rightCard = BuildAppsPanel();
-        Grid.SetColumn(rightCard, 2);
+        var rightColumn = BuildAppsPanel();
+        Grid.SetColumn(rightColumn, 2);
         body.Children.Add(leftCard);
-        body.Children.Add(rightCard);
+        body.Children.Add(rightColumn);
 
         // ---------- status: folded into the header tooltip area (no bottom bar) ----------
         var root = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(header, Dock.Top);
-        root.Children.Add(header);
         root.Children.Add(body);
 
         // drag ghost: compositor-drawn overlay INSIDE the window (a separate top-level window
@@ -109,8 +85,7 @@ public sealed class MainWindow : Window
         {
             if (e.PropertyName == nameof(MixerVm.StatusText))
             {
-                _status.Text = _vm.StatusText;
-                ToolTip.SetTip(this, _vm.StatusText);   // status lives on the window tooltip now
+                _status.Text = _vm.StatusText;   // status text kept for the tray/logging only
             }
             if (e.PropertyName == nameof(MixerVm.Outputs) || e.PropertyName == nameof(MixerVm.SelectedOutput))
                 SyncOutputBox();
@@ -152,8 +127,11 @@ public sealed class MainWindow : Window
         RefreshTheme();
         foreach (var card in _cards.Values) card.RefreshTheme();
         SyncAppRows();
-        // logo + header live anywhere in the tree — refresh every Image we own
-        foreach (var img in this.GetVisualDescendants().OfType<Image>()) UpdateLogo(img);
+        if (_controlBox is not null) _controlBox.Background = Res("SonoElevatedBrush");
+        if (_logoBox is not null) _logoBox.Background = Res("SonoElevatedBrush");
+        // refresh ONLY the tagged logo images (never other Images: mute/app-row/button icons)
+        foreach (var img in this.GetVisualDescendants().OfType<Image>().Where(i => (i.Tag as string) == "sonoLogo"))
+            UpdateLogo(img);
     }
 
     private static void UpdateLogo(Image img)
@@ -215,7 +193,8 @@ public sealed class MainWindow : Window
     {
         var title = new TextBlock { Text = "APPLICATIONS", FontSize = 13, FontWeight = FontWeight.SemiBold, VerticalAlignment = VerticalAlignment.Center };
         var hint = new TextBlock { Text = "drag onto a group", Classes = { "muted" }, FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
-        var addBtn = new Button { Content = "＋", Classes = { "sono" }, Width = 30, Height = 26, FontSize = 14, VerticalAlignment = VerticalAlignment.Center };
+        var addBtn = UiIcon.IconButton("plus", 22);
+        addBtn.Width = 34; addBtn.Height = 34; addBtn.VerticalAlignment = VerticalAlignment.Center;
         addBtn.Click += (_, _) =>
         {
             // picker = known apps not already pinned/shown — clicking pins a row into the panel
@@ -242,19 +221,61 @@ public sealed class MainWindow : Window
         titleSp.Children.Add(title);
         titleSp.Children.Add(hint);
         titleRow.Children.Add(titleSp);
-        var head = new StackPanel();
-        DockPanel.SetDock(head, Dock.Top);
-        head.Children.Add(titleRow);
-
-        return new Border
+        // ---- top box: OUTPUT picker + settings gear ----
+        var gear = UiIcon.IconButton("settings", 24);
+        gear.Width = 36;
+        gear.Height = 32;
+        gear.VerticalAlignment = VerticalAlignment.Center;
+        gear.Click += (_, _) => OpenSettings();
+        _gearBtn = gear;
+        _outputBox.SelectionChanged += OnOutputSelected;
+        _outputBox.MinWidth = 150; _outputBox.MaxWidth = 200;
+        var outLabel = new TextBlock { Text = "OUTPUT", Classes = { "muted" }, FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
+        var outRow = new Grid { ColumnDefinitions = { new ColumnDefinition(1, GridUnitType.Star), new ColumnDefinition(GridLength.Auto) } };
+        var outSp = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Children = { outLabel, _outputBox } };
+        Grid.SetColumn(outSp, 0);
+        Grid.SetColumn(gear, 1);
+        outRow.Children.Add(outSp);
+        outRow.Children.Add(gear);
+        _controlBox = new Border
         {
             Classes = { "card" },
-            Child = new DockPanel
-            {
-                LastChildFill = true,
-                Children = { head, new ScrollViewer { Content = _appsHost } },
-            },
+            Margin = new Thickness(0, 0, 0, 10),
+            Padding = new Thickness(10, 8),
+            Background = MainWindow.Res("SonoElevatedBrush"),
+            Child = outRow,
         };
+
+        var head = new StackPanel { Margin = new Thickness(2, 2, 0, 10) };
+        head.Children.Add(titleRow);
+
+        // bottom of the panel: own box with just the logo (fills the box)
+        var logo = new Image { MaxHeight = 110, HorizontalAlignment = HorizontalAlignment.Stretch, Tag = "sonoLogo", Stretch = Avalonia.Media.Stretch.Uniform };
+        UpdateLogo(logo);
+        _logoBox = new Border
+        {
+            Classes = { "card" },
+            Padding = new Thickness(8),
+            Background = MainWindow.Res("SonoElevatedBrush"),
+            Child = logo,
+        };
+
+        var appsCard = new Border
+        {
+            Classes = { "card" },
+            Margin = new Thickness(0, 10, 0, 10),
+            Child = new DockPanel { LastChildFill = true, Children = { head, new ScrollViewer { Content = _appsHost } } },
+        };
+        DockPanel.SetDock(head, Dock.Top);   // title row spans the top — rows get full width
+        var panelGrid = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(1, GridUnitType.Star), new RowDefinition(GridLength.Auto) } };
+        Grid.SetRow(_controlBox, 0);
+        Grid.SetRow(appsCard, 1);
+        Grid.SetRow(_logoBox, 2);
+        panelGrid.Children.Add(_controlBox);
+        panelGrid.Children.Add(appsCard);
+        panelGrid.Children.Add(_logoBox);
+
+        return panelGrid;   // three stacked boxes: controlBox / applications card / logoBox
     }
 
     private void SyncAppRows()
@@ -276,14 +297,38 @@ public sealed class MainWindow : Window
 
         var tag = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(8, 2), VerticalAlignment = VerticalAlignment.Center, Child = tagText };
 
-        var top = new DockPanel { LastChildFill = true };
-        DockPanel.SetDock(tag, Dock.Right);
-        top.Children.Add(tag);
-        top.Children.Add(name);
+        var iconImage = new Image
+        {
+            Width = 16, Height = 16,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 7, 0),
+        };
+        var icon = AppIcon.Get(row.Exe);
+        if (icon is not null) iconImage.Source = icon; else iconImage.IsVisible = false;
 
-        var bar = new ProgressBar { Height = 6, MinWidth = 64, Maximum = 100, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(3) };
-        var volLabel = new TextBlock { Classes = { "muted" }, FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
-        var bottom = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 5, 0, 0) };
+        var nameRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        nameRow.Children.Add(iconImage);
+        nameRow.Children.Add(name);
+
+        var menuBtn = UiIcon.IconButton("more", 16);
+        menuBtn.Width = 44; menuBtn.Height = 26; menuBtn.VerticalAlignment = VerticalAlignment.Center;
+        menuBtn.Margin = new Thickness(8, 0, 0, 0);   // spacer to the tag/name
+
+        var top = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(menuBtn, Dock.Right);
+        DockPanel.SetDock(tag, Dock.Right);
+        top.Children.Add(menuBtn);
+        top.Children.Add(tag);
+        top.Children.Add(nameRow);
+
+        // bottom row: percentage right-aligned to the title's right edge, bar stretches
+        var bar = new ProgressBar { Height = 6, Minimum = 0, Maximum = 100, CornerRadius = new CornerRadius(3) };
+        var volLabel = new TextBlock { Classes = { "muted" }, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(8, 0, 0, 0) };
+        var bottom = new Grid { Margin = new Thickness(0, 5, 0, 0) };
+        bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(bar, 0);
+        Grid.SetColumn(volLabel, 1);
         bottom.Children.Add(bar);
         bottom.Children.Add(volLabel);
 
@@ -291,19 +336,10 @@ public sealed class MainWindow : Window
         sp.Children.Add(top);
         sp.Children.Add(bottom);
 
-        var menuBtn = new Button { Content = "⋯", Classes = { "sono" }, Width = 30, Height = 26, FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
         menuBtn.Click += (_, _) => OpenAppAssignMenu(menuBtn, row);
 
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(sp, 0);
-        Grid.SetColumn(menuBtn, 1);
-        grid.Children.Add(sp);
-        grid.Children.Add(menuBtn);
-
-        var root = new Border { Padding = new Thickness(10, 8), CornerRadius = new CornerRadius(10) };
-        root.Child = grid;
+        var root = new Border { Padding = new Thickness(10, 8), CornerRadius = new CornerRadius(10), HorizontalAlignment = HorizontalAlignment.Stretch };
+        root.Child = sp;
 
         void Update(AppRowVm r)
         {
@@ -313,6 +349,8 @@ public sealed class MainWindow : Window
             bar.Value = Math.Round(r.SessionVol * 100);
             volLabel.Text = $"{Math.Round(r.SessionVol * 100)}%"+(r.SessionMuted ? "  muted" : "");
             var idx = r.Group is null ? -1 : _vm.Channels.ToList().FindIndex(c => c.Id == r.Group);
+            name.Foreground = Res("SonoTextBrush");   // Fluent default can be dark-on-dark
+            volLabel.Foreground = Res("SonoMutedBrush");
             if (idx < 0)
             {
                 root.Background = Res("SonoElevatedBrush");
@@ -373,7 +411,7 @@ public sealed class MainWindow : Window
     }
 
     private static IBrush Tint(string hex) =>
-        Color.TryParse(hex, out var c) ? new ImmutableSolidColorBrush(Color.FromArgb(42, c.R, c.G, c.B)) : Brushes.Transparent;
+        Color.TryParse(hex, out var c) ? new ImmutableSolidColorBrush(Color.FromArgb(64, c.R, c.G, c.B)) : Brushes.Transparent;
 
     private static IBrush Solid(string hex) =>
         Color.TryParse(hex, out var c) ? new ImmutableSolidColorBrush(c) : Brushes.White;

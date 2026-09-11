@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using SONO.App.Themes;
 
 namespace SONO.App.Controls;
@@ -29,6 +30,7 @@ public sealed class HotkeyBox : Border
     private bool _armed;
     private bool _rightDown;
     private readonly TextBlock _text;
+    private readonly Grid _content = new();
 
     public HotkeyBox()
     {
@@ -37,9 +39,35 @@ public sealed class HotkeyBox : Border
         Padding = new Thickness(6, 4);
         MinWidth = 0;
         MinHeight = 28;
+        ClipToBounds = true;   // never paint outside our rounded box
+        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch;
         Cursor = new Cursor(StandardCursorType.Hand);
-        _text = new TextBlock { FontSize = 12.5, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center };
-        Child = _text;
+        _text = new TextBlock { FontSize = 12.5, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        // ✕ clear affordance, visible only when a binding exists
+        var clear = new TextBlock
+        {
+            Text = "✕",
+            FontSize = 10,
+            Margin = new Thickness(7, 0, 0, 0),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Cursor = new Cursor(StandardCursorType.Hand),
+        };
+        clear.PointerPressed += (_, args) =>
+        {
+            args.Handled = true;
+            if (_armed) return;
+            HotkeyText = null;
+            UpdateVisual();
+            Committed?.Invoke(null);
+        };
+        // star column gives the text a REAL width constraint (StackPanel gave it infinity → no trim)
+        _content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(_text, 0);
+        Grid.SetColumn(clear, 1);
+        _content.Children.Add(_text);
+        _content.Children.Add(clear);
+        Child = _content;
         UpdateVisual();
     }
 
@@ -48,15 +76,34 @@ public sealed class HotkeyBox : Border
 
     private static IBrush FallbackBrush => new SolidColorBrush(Color.Parse("#2C3046"));
 
+    /// <summary>Optional group-tinted resting background; falls back to theme field color.</summary>
+    public IBrush? BackgroundOverride { get; set; }
+
     private void UpdateVisual()
     {
-        var p = ThemeManager.Current;
-        Background = _armed ? BrushOf(p.FieldFocus) ?? FallbackBrush : BrushOf(p.Field) ?? FallbackBrush;
-        _text.Text = _armed ? "press keys…"
-            : string.IsNullOrWhiteSpace(HotkeyText) ? "click to bind" : HotkeyText;
-        _text.Foreground = _armed ? BrushOf(p.Accent) ?? FallbackBrush
-            : string.IsNullOrWhiteSpace(HotkeyText) ? BrushOf(p.Muted) ?? FallbackBrush
-            : BrushOf(p.Text) ?? FallbackBrush;
+        bool hasBinding = !string.IsNullOrWhiteSpace(HotkeyText);
+        // group-derived fills: darker tint = empty, lighter tint = waiting
+        var emptyFill = BackgroundOverride ?? BrushOf(ThemeManager.Current.Field) ?? FallbackBrush;
+        var waitFill = Darker(BackgroundOverride as ImmutableSolidColorBrush, 0.25)
+                       ?? BrushOf(ThemeManager.Current.FieldFocus) ?? FallbackBrush;
+        Background = _armed ? waitFill : hasBinding ? BackgroundOverride ?? emptyFill
+            : Darker(BackgroundOverride as ImmutableSolidColorBrush, 0.18) ?? emptyFill;
+        _text.Text = _armed ? "Waiting for input…"
+            : !hasBinding ? "None" : HotkeyText;
+        _text.Foreground = _armed ? BrushOf(ThemeManager.Current.Text) ?? FallbackBrush
+            : !hasBinding ? BrushOf(ThemeManager.Current.Muted) ?? FallbackBrush
+            : BrushOf(ThemeManager.Current.Text) ?? FallbackBrush;
+        // ✕ only when a binding exists and we're not capturing
+        if (_content.Children.Count > 1)
+            _content.Children[1].IsVisible = hasBinding && !_armed;
+    }
+
+    private static IBrush? Darker(ImmutableSolidColorBrush? b, double ratio)
+    {
+        if (b is null) return null;
+        var c = b.Color;
+        return new ImmutableSolidColorBrush(Color.FromArgb(c.A,
+            (byte)(c.R * (1 - ratio)), (byte)(c.G * (1 - ratio)), (byte)(c.B * (1 - ratio))));
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)

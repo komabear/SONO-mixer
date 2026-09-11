@@ -59,7 +59,17 @@ public sealed class ChannelCard : Border
             if (_thumb is not null && _thumbBrush is not null) _thumb.Background = _thumbBrush;
         };
 
-        _muteBtn = new ToggleButton { Content = "Mute", MinWidth = 58, VerticalAlignment = VerticalAlignment.Center, Classes = { "sono" } };
+        _muteBtn = new ToggleButton
+        {
+            Width = 34,
+            Height = 34,
+            Padding = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Classes = { "sono" },
+        };
         _muteBtn.IsCheckedChanged += (object? s, RoutedEventArgs e) =>
         {
             var m = _muteBtn.IsChecked == true;
@@ -103,10 +113,23 @@ public sealed class ChannelCard : Border
             _name.Text = _ch.Name;   // (was never set — names were invisible)
             _pct.Text = $"{_ch.VolumePct}%";
             if (!_draggingSlider) _slider.Value = _ch.VolumePct;
-            _muteBtn.Content = _ch.Muted ? "Muted" : "Mute";
         }
         if (prop is null or nameof(ChannelVm.Muted))
+        {
             _muteBtn.IsChecked = _ch.Muted;
+            var iconImg = new Image
+            {
+                Source = UiIcon.Get(_ch.Muted ? "mute" : "sound"),
+                Width = 22,
+                Height = 22,
+                Opacity = 0.95,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            _muteBtn.Content = iconImg;
+            _muteBtn.Background = TintBrush(GroupHex, _ch.Muted ? 0.45 : 0.25);   // group-colored button
+            ToolTip.SetTip(_muteBtn, _ch.Muted ? "Unmute" : "Mute");
+        }
         if (prop is null or nameof(ChannelVm.VolDownKey)) _hkDown.HotkeyText = _ch.VolDownKey;
         if (prop is null or nameof(ChannelVm.VolUpKey)) _hkUp.HotkeyText = _ch.VolUpKey;
         if (prop is null or nameof(ChannelVm.MuteKey)) _hkMute.HotkeyText = _ch.MuteKey;
@@ -197,7 +220,16 @@ public sealed class ChannelCard : Border
         Background = BoxFill,
     };
 
-    private IBrush BoxFill => new ImmutableSolidColorBrush(LighterColor(Themes.ThemeManager.Current.Elevated, 0.10f));
+    /// <summary>Inner box fill: translucent wash of the group's color over the card —
+    /// hue stays clean (no opaque lerp mud), card tone shows through.</summary>
+    private IBrush BoxFill
+    {
+        get
+        {
+            Color.TryParse(GroupHex, out var g);
+            return new ImmutableSolidColorBrush(Color.FromArgb(46, g.R, g.G, g.B));
+        }
+    }
 
     private static void HkCell(Control box, string label, UniformGrid host)
     {
@@ -246,7 +278,7 @@ public sealed class ChannelCard : Border
     private void StyleChips()
     {
         var p = Themes.ThemeManager.Current;
-        IBrush bg = Color.TryParse(p.Chip, out var c1) ? new SolidColorBrush(c1) : Brushes.Gray;
+        IBrush bg = TintBrush(GroupHex, 0.35);          // group-tinted chips
         IBrush tx = Color.TryParse(p.Text, out var c2) ? new SolidColorBrush(c2) : Brushes.White;
         foreach (var ctrl in _chips.Children.OfType<Border>())
         {
@@ -328,8 +360,8 @@ public sealed class ChannelCard : Border
     {
         var p = Themes.ThemeManager.Current;
         IBrush B(string hex) => Color.TryParse(hex, out var c) ? new SolidColorBrush(c) : Brushes.Gray;
-        // neutral elevated box + colored outline + colored dot: group identity without clashing fills
-        Background = B(p.Elevated);
+        // card body = the main window background (dark gray); identity comes from the outline
+        Background = B(p.Bg);
         BorderBrush = Solid(GroupHex);
         BorderThickness = new Thickness(1.5);
         _dot.Fill = Solid(GroupHex);
@@ -338,6 +370,11 @@ public sealed class ChannelCard : Border
         _slider.Foreground = Solid(GroupHex);
         _thumbBrush = Lighter(GroupHex, 0.45f);   // thumb = lighter variant for contrast
         if (_thumb is not null) _thumb.Background = _thumbBrush;
+        // shortcut inputs share the mute button's group tint
+        var groupTint = TintBrush(GroupHex, 0.25);
+        _hkDown.BackgroundOverride = groupTint;
+        _hkUp.BackgroundOverride = groupTint;
+        _hkMute.BackgroundOverride = groupTint;
         // inner boxes cache their fill — restyle them too
         foreach (var box in (Child as Grid)?.Children.OfType<Border>() ?? Enumerable.Empty<Border>())
             box.Background = BoxFill;
@@ -369,6 +406,9 @@ public sealed class ChannelCard : Border
     }
 
     private static Color Parse(string hex) => Color.TryParse(hex, out var c) ? c : Colors.Gray;
+
+    private static IBrush TintBrush(string hex, double alpha) =>
+        Color.TryParse(hex, out var c) ? new ImmutableSolidColorBrush(Color.FromArgb((byte)(alpha * 255), c.R, c.G, c.B)) : Brushes.Transparent;
 
     /// <summary>Darker Color (toward black) — slider fill derived from the box color.</summary>
     private static IBrush DarkerBrush(string hex, float ratio)

@@ -1,6 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using SONO.App.Themes;
@@ -24,7 +26,7 @@ public sealed class SettingsWindow : Window
     {
         _vm = vm;
         Title = "SONO Settings";
-        Width = 460; Height = 560;
+        Width = 440; Height = 520;
         CanResize = false;
         ShowInTaskbar = false;
         SystemDecorations = SystemDecorations.Full;
@@ -51,7 +53,7 @@ public sealed class SettingsWindow : Window
 
     private Control Build()
     {
-        var sp = new StackPanel { Margin = new Thickness(20), Spacing = 14 };
+        var sp = new StackPanel { Margin = new Thickness(16), Spacing = 8 };
 
         // ---- startup ----
         var startWin = new CheckBox { Content = "Start with Windows" };
@@ -103,27 +105,132 @@ public sealed class SettingsWindow : Window
         };
         var osdRow = LabeledRow("Volume popup position", osdBox);
 
-        // ---- theme ----
+        // ---- theme (compact): dropdown + grid of pickers; 10 built-ins + 3 customs, all editable ----
+        var allThemes = CustomThemeStore.AllWithCustoms();
         string themeId;
         lock (_vm.Settings) themeId = _vm.Settings.ThemeId;
-        var themeBox = new ComboBox { MinWidth = 180, HorizontalAlignment = HorizontalAlignment.Left };
-        foreach (var t in ThemeCatalog.All) themeBox.Items.Add(t.Name);
-        var cur = ThemeCatalog.Get(themeId);
-        int curIdx = 0;
-        for (int i = 0; i < ThemeCatalog.All.Count; i++)
-            if (ThemeCatalog.All[i].Id == cur.Id) { curIdx = i; break; }
-        themeBox.SelectedIndex = curIdx;
+        var SyncAll = new List<Action>();   // swatch refreshers, run on theme switch
+        var themeBox = new ComboBox { MinWidth = 200, HorizontalAlignment = HorizontalAlignment.Left, FontSize = 12.5 };
+        foreach (var t in allThemes) themeBox.Items.Add(t.Name);
+        var cur = allThemes.FirstOrDefault(t => t.Id == themeId) ?? allThemes[0];
+        themeBox.SelectedIndex = Math.Max(0, allThemes.FindIndex(t => t.Id == cur.Id));
+
+        Palette CurrentTheme() => allThemes.FirstOrDefault(t => t.Id == ThemeManager.Current.Id) ?? ThemeManager.Current;
+
+        void ApplyCurrent()
+        {
+            ThemeManager.Apply(CurrentTheme());
+            lock (_vm.Settings) _vm.Settings.ThemeId = ThemeManager.Current.Id;
+            _vm.Save();
+            ThemeApplied?.Invoke();
+        }
+
         themeBox.SelectionChanged += (_, _) =>
         {
             if (themeBox.SelectedIndex < 0) return;
-            var p = ThemeCatalog.All[themeBox.SelectedIndex];
+            var p = allThemes[themeBox.SelectedIndex];
             ThemeManager.Apply(p);
             lock (_vm.Settings) _vm.Settings.ThemeId = p.Id;
             _vm.Save();
+            foreach (var r in SyncAll) r();   // swatches follow the newly-selected theme
             ThemeApplied?.Invoke();
-            SONO.Core.Diagnostics.Log.Write($"theme applied: {p.Name}");
         };
-        var themeRow = LabeledRow("Theme", themeBox);
+        var themeRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        themeRow.Children.Add(new TextBlock { Text = "Theme", FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center });
+        themeRow.Children.Add(themeBox);
+
+        // reset: drop the saved override for the current slot (custom → deleted from file;
+        // built-in → built-ins aren't in the file at all, so this only matters for customs)
+        var resetBtn = new Button { Content = "Reset to default", Classes = { "sono" }, Padding = new Thickness(10, 5), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+        resetBtn.Click += (_, _) =>
+        {
+            var currentId = ThemeManager.Current.Id;
+            // remove any file override for this slot
+            var customs = CustomThemeStore.Load();
+            var removed = customs.RemoveAll(t => t.Id == currentId);
+            if (removed > 0) CustomThemeStore.Save(customs);
+            // re-apply: allThemes may hold the stale override — pull the pristine catalog entry
+            var pristine = ThemeCatalog.All.FirstOrDefault(t => t.Id == currentId) ?? ThemeCatalog.Default;
+            ThemeManager.Apply(pristine);
+            lock (_vm.Settings) _vm.Settings.ThemeId = pristine.Id;
+            _vm.Save();
+            // sync swatches to the restored colors
+            foreach (var r in SyncAll) r();
+            ThemeApplied?.Invoke();
+        };
+        themeRow.Children.Add(resetBtn);
+
+        // compact picker: a small color rectangle that opens a ColorView flyout
+        StackPanel MakeColorEntry(string label, Func<Palette, string> get, Action<Palette, Color> set)
+        {
+            var swatch = new Border { Width = 26, Height = 26, CornerRadius = new CornerRadius(5), Cursor = new Cursor(StandardCursorType.Hand) };
+            var lbl = new TextBlock { Text = label, FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+            var view = new Avalonia.Controls.ColorView
+            {
+                Width = 300,
+                Height = 340,
+                ColorModel = Avalonia.Controls.ColorModel.Rgba,
+                ColorSpectrumComponents = Avalonia.Controls.ColorSpectrumComponents.HueSaturation,
+            };
+            view.ColorChanged += (_, e) =>
+            {
+                set(CurrentTheme(), e.NewColor);
+                swatch.Background = new SolidColorBrush(e.NewColor);
+                ApplyCurrent();
+                // persist ONLY the custom slots (built-ins are fixed)
+                if (CurrentTheme().Id.StartsWith("custom-"))
+                    CustomThemeStore.Save(allThemes.Where(t => t.Id.StartsWith("custom-")));
+            };
+            // host in a sized panel — a bare ColorView as Flyout.Content can present empty
+            var host = new Border
+            {
+                Background = MainWindow.Res("SonoElevatedBrush"),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10),
+                Child = view,
+            };
+            var flyout = new Flyout { Placement = PlacementMode.Right, Content = host };
+            FlyoutBase.SetAttachedFlyout(swatch, flyout);
+            swatch.PointerPressed += (_, _) =>
+            {
+                if (Color.TryParse(get(CurrentTheme()), out Color c)) view.Color = c;
+                FlyoutBase.ShowAttachedFlyout(swatch);
+            };
+            SyncAll.Add(() =>
+            {
+                if (Color.TryParse(get(CurrentTheme()), out Color c))
+                    swatch.Background = new SolidColorBrush(c);
+            });
+            if (Color.TryParse(get(CurrentTheme()), out Color c0))
+                swatch.Background = new SolidColorBrush(c0);
+            var entry = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            entry.Children.Add(swatch);
+            entry.Children.Add(lbl);
+            return entry;
+        }
+
+        var groupColors = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14 };
+        string[] glabels = { "Game", "Chat", "Media", "Aux" };
+        for (int i = 0; i < 4; i++)
+        {
+            int idx = i;
+            groupColors.Children.Add(MakeColorEntry(glabels[idx], p => p.GroupBgs[idx], (p, c) => p.GroupBgs[idx] = c.ToString()));
+        }
+
+        var surfaceColors = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14 };
+        surfaceColors.Children.Add(MakeColorEntry("Background", p => p.Bg, (p, c) => p.Bg = c.ToString()));
+        surfaceColors.Children.Add(MakeColorEntry("Panels", p => p.Card, (p, c) => p.Card = c.ToString()));
+        surfaceColors.Children.Add(MakeColorEntry("Elevated", p => p.Elevated, (p, c) => p.Elevated = c.ToString()));
+        surfaceColors.Children.Add(MakeColorEntry("Field", p => p.Field, (p, c) => p.Field = c.ToString()));
+        surfaceColors.Children.Add(MakeColorEntry("Text", p => p.Text, (p, c) => p.Text = c.ToString()));
+        surfaceColors.Children.Add(MakeColorEntry("Muted", p => p.Muted, (p, c) => p.Muted = c.ToString()));
+
+        var appearance = new StackPanel { Spacing = 10 };
+        appearance.Children.Add(themeRow);
+        appearance.Children.Add(new TextBlock { Text = "GROUPS", Classes = { "muted" }, FontSize = 10, FontWeight = FontWeight.SemiBold });
+        appearance.Children.Add(groupColors);
+        appearance.Children.Add(new TextBlock { Text = "SURFACES", Classes = { "muted" }, FontSize = 10, FontWeight = FontWeight.SemiBold });
+        appearance.Children.Add(surfaceColors);
 
         // ---- about ----
         var about = new Border { Classes = { "card" }, Padding = new Thickness(14), CornerRadius = new CornerRadius(12) };
@@ -146,7 +253,7 @@ public sealed class SettingsWindow : Window
         sp.Children.Add(stepRow);
         sp.Children.Add(osdRow);
         sp.Children.Add(Section("Appearance"));
-        sp.Children.Add(themeRow);
+        sp.Children.Add(appearance);
         sp.Children.Add(Section("About"));
         sp.Children.Add(about);
 
@@ -164,6 +271,16 @@ public sealed class SettingsWindow : Window
         "top" => "Top center", "bottom" => "Bottom center", "left" => "Middle left", "right" => "Middle right",
         "center" => "Screen center",
         _ => System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(a.Replace('-', ' ')),
+    };
+
+    private static Palette CloneWith(Palette p, string? bg = null, string? card = null, string? text = null) => new()
+    {
+        Id = p.Id, Name = p.Name,
+        Bg = bg ?? p.Bg, Card = card ?? p.Card, Elevated = p.Elevated,
+        Field = p.Field, FieldFocus = p.FieldFocus, Chip = p.Chip,
+        Border = p.Border, Text = text ?? p.Text, Muted = p.Muted,
+        Accent = p.Accent, Danger = p.Danger,
+        Swatches = p.Swatches.ToArray(), GroupBgs = p.GroupBgs.ToArray(), LogoUri = p.LogoUri,
     };
 
     private static Control Section(string title) => new TextBlock
