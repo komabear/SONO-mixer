@@ -77,7 +77,11 @@ public class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var settings = SettingsStore.Load();
-            ThemeManager.Apply(ThemeCatalog.Get(settings.ThemeId));
+            // AllWithCustoms() resolves overrides from themes.json — ThemeCatalog.Get would
+            // return the pristine entry and ignore the user's saved colors
+            var startupTheme = CustomThemeStore.AllWithCustoms().FirstOrDefault(t => t.Id == settings.ThemeId)
+                               ?? CustomThemeStore.AllWithCustoms()[0];
+            ThemeManager.Apply(startupTheme);
 
             var engine = new AudioEngine();
             var hotkeys = Hotkeys ??= new HotkeyManager();
