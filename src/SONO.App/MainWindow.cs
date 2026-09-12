@@ -294,6 +294,7 @@ public sealed class MainWindow : Window
     {
         var name = new TextBlock { FontSize = 12.5, FontWeight = FontWeight.Medium, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 108 };
         var tagText = new TextBlock { FontSize = 11, FontWeight = FontWeight.SemiBold };
+        var mutedText = new TextBlock { Text = "MUTED", FontSize = 10, FontWeight = FontWeight.SemiBold, Foreground = Res("SonoDangerBrush"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
 
         var tag = new Border { CornerRadius = new CornerRadius(6), Padding = new Thickness(8, 2), VerticalAlignment = VerticalAlignment.Center, Child = tagText };
 
@@ -317,8 +318,10 @@ public sealed class MainWindow : Window
         var top = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(menuBtn, Dock.Right);
         DockPanel.SetDock(tag, Dock.Right);
+        DockPanel.SetDock(mutedText, Dock.Right);
         top.Children.Add(menuBtn);
         top.Children.Add(tag);
+        top.Children.Add(mutedText);
         top.Children.Add(nameRow);
 
         // bottom row: percentage right-aligned to the title's right edge, bar stretches
@@ -346,8 +349,9 @@ public sealed class MainWindow : Window
             name.Text = r.Name;
             tagText.Text = r.GroupName;
             tag.IsVisible = r.HasGroup;
+            mutedText.IsVisible = r.SessionMuted;   // state on the left of the group tag
             bar.Value = Math.Round(r.SessionVol * 100);
-            volLabel.Text = $"{Math.Round(r.SessionVol * 100)}%"+(r.SessionMuted ? "  muted" : "");
+            volLabel.Text = $"{Math.Round(r.SessionVol * 100)}%";
             var idx = r.Group is null ? -1 : _vm.Channels.ToList().FindIndex(c => c.Id == r.Group);
             name.Foreground = Res("SonoTextBrush");   // Fluent default can be dark-on-dark
             volLabel.Foreground = Res("SonoMutedBrush");
