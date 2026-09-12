@@ -20,9 +20,9 @@ public static unsafe class UiIcon
     {
         get
         {
-            // parse the theme's Text color: light text ⇒ dark theme, dark text ⇒ light theme
-            if (Color.TryParse(Themes.ThemeManager.Current.Text, out var t))
-                return (t.R * 299 + t.G * 587 + t.B * 114) / 1000 > 128;
+            // measure the theme's BACKGROUND luminance: light bg ⇒ light theme (dark glyphs)
+            if (Color.TryParse(Themes.ThemeManager.Current.Bg, out var b))
+                return (b.R * 299 + b.G * 587 + b.B * 114) / 1000 > 128;
             return false;
         }
     }
