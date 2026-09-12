@@ -120,7 +120,7 @@ public sealed class ChannelCard : Border
             _muteBtn.IsChecked = _ch.Muted;
             var iconImg = new Image
             {
-                Source = UiIcon.Get(_ch.Muted ? "mute" : "sound"),
+                Source = UiIcon.GetTinted(_ch.Muted ? "mute" : "sound", UiIcon.IsLightTheme),
                 Width = 22,
                 Height = 22,
                 Opacity = 0.95,

@@ -264,7 +264,7 @@ public sealed class SettingsWindow : Window
         // ---- about ----
         var about = new Border { Classes = { "card" }, Padding = new Thickness(14), CornerRadius = new CornerRadius(12) };
         var aboutSp = new StackPanel { Spacing = 6 };
-        aboutSp.Children.Add(new TextBlock { Text = "SONO 2.0.0", FontSize = 16, FontWeight = FontWeight.Bold });
+        aboutSp.Children.Add(new TextBlock { Text = "SONO 2.1.0", FontSize = 16, FontWeight = FontWeight.Bold });
         aboutSp.Children.Add(new TextBlock { Text = Desc, TextWrapping = TextWrapping.Wrap, Classes = { "muted" }, FontSize = 12 });
         var link = new Button { Content = "github.com/komabear/SONO-mixer", Classes = { "sono" }, Padding = new Thickness(8, 4) };
         link.Click += async (_, _) =>
