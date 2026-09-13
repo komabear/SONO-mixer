@@ -22,9 +22,19 @@ public sealed class AppSettings
     /// <summary>Active UI theme id (see ThemeCatalog).</summary>
     public string ThemeId { get; set; } = "tokyo-night";
 
-    /// <summary>Volume OSD anchor: "off" or one of the 9 screen positions
+    /// <summary>OSD anchor: "off" or one of the 9 screen positions
     /// (top-left/top/top-right/left/center/right/bottom-left/bottom/bottom-right).</summary>
     public string OsdAnchor { get; set; } = "bottom-right";
+
+    /// <summary>Endpoint ids hidden from the main window's OUTPUT dropdown.
+    /// The current default output is always shown regardless.</summary>
+    public List<string> HiddenOutputs { get; set; } = new();
+
+    /// <summary>Global hotkey for switching to the previous visible output ("Ctrl+Alt+Left" style text; empty = unbound).</summary>
+    public string? OutputPrevHotkey { get; set; }
+
+    /// <summary>Global hotkey for switching to the next visible output; empty = unbound.</summary>
+    public string? OutputNextHotkey { get; set; }
     /// <summary>True once the app has written the autostart Run key for the first time —
     /// prevents re-asserting it (and re-pointing it at a different exe path) every launch.</summary>
     public bool AutostartConfigured { get; set; }

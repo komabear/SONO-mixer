@@ -199,6 +199,10 @@ public sealed class MixerVm : ObservableObject
 
     private void OnHotkey(string channelId, HotkeySlot slot)
     {
+        // special bindings first: output cycling
+        if (channelId == HotkeyManager.OutputPrevChannel) { CycleOutput(-1); return; }
+        if (channelId == HotkeyManager.OutputNextChannel) { CycleOutput(+1); return; }
+
         float step;
         lock (Settings) step = Settings.HotkeyStep <= 0 ? 0.05f : Settings.HotkeyStep;
         NudgeVolume(channelId, slot switch
@@ -301,6 +305,11 @@ public sealed class MixerVm : ObservableObject
                 })
                 .Where(b => b.Item3 is not null)
                 .ToList();
+            // special bindings: output prev/next cycling
+            if (!string.IsNullOrWhiteSpace(Settings.OutputPrevHotkey))
+                bindings.Add((HotkeyManager.OutputPrevChannel, HotkeyManager.OutputPrevSlot, Settings.OutputPrevHotkey));
+            if (!string.IsNullOrWhiteSpace(Settings.OutputNextHotkey))
+                bindings.Add((HotkeyManager.OutputNextChannel, HotkeyManager.OutputNextSlot, Settings.OutputNextHotkey));
         }
         return _hotkeys.ApplyAll(bindings);
     }
@@ -320,6 +329,11 @@ public sealed class MixerVm : ObservableObject
             def?.Dispose();
             foreach (var dev in enumr.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
             {
+                // visibility filter: hidden ids don't show on the dropdown (current default always visible)
+                bool isCurrent = currentId is not null && dev.ID == currentId;
+                bool hidden;
+                lock (Settings) hidden = Settings.HiddenOutputs.Contains(dev.ID, StringComparer.OrdinalIgnoreCase);
+                if (hidden && !isCurrent) { dev.Dispose(); continue; }
                 list.Add(new OutputVm(dev.ID, dev.FriendlyName));
                 dev.Dispose();
             }
@@ -337,7 +351,7 @@ public sealed class MixerVm : ObservableObject
             Set(ref _selectedOutput, sel, nameof(SelectedOutput));
     }
 
-    /// <summary>Switch the Windows default output (same path for picker, tray menu, settings).</summary>
+    /// <summary>Switch the Windows default output (same path for picker, tray, hotkeys).</summary>
     public void SwitchOutput(OutputVm vm)
     {
         try
@@ -349,6 +363,17 @@ public sealed class MixerVm : ObservableObject
         {
             StatusText = $"Could not switch output: {ex.Message}";
         }
+    }
+
+    /// <summary>Cycle to the next/previous VISIBLE output (wraps around). Returns the new output, or null if <1 visible.</summary>
+    public OutputVm? CycleOutput(int direction)
+    {
+        var visible = Outputs.ToList();   // Outputs already filtered by visibility
+        if (visible.Count == 0) return null;
+        var idx = _selectedOutput is null ? -1 : visible.FindIndex(o => o.Id == _selectedOutput.Id);
+        var next = visible[((idx + direction) % visible.Count + visible.Count) % visible.Count];
+        SelectedOutput = next;   // setter persists + switches
+        return next;
     }
 
     public void SetOutputSilently(OutputVm vm) => Set(ref _selectedOutput, vm, nameof(SelectedOutput));

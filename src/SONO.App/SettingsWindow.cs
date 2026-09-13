@@ -5,14 +5,15 @@ using Avalonia.Layout;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using SONO.App.Controls;
 using SONO.App.Themes;
 using SONO.App.ViewModels;
 using SONO.Core.SystemIntegrations;
 
 namespace SONO.App;
 
-/// <summary>Settings flyout window: Start-with-Windows, Start minimized, hotkey step,
-/// OSD position, theme list, About.</summary>
+/// <summary>Settings window: Startup, Behavior, Outputs (visibility + prev/next hotkeys),
+/// Appearance (theme + palette editor), About. Compact card-based layout matching the mixer.</summary>
 public sealed class SettingsWindow : Window
 {
     private readonly MixerVm _vm;
@@ -26,8 +27,8 @@ public sealed class SettingsWindow : Window
     {
         _vm = vm;
         Title = "SONO Settings";
-        Width = 440; Height = 520;
-        CanResize = false;
+        Width = 560; Height = 640;
+        CanResize = true;
         ShowInTaskbar = false;
         SystemDecorations = SystemDecorations.Full;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -45,17 +46,11 @@ public sealed class SettingsWindow : Window
         return w;
     }
 
-    protected override void OnClosing(WindowClosingEventArgs e)
-    {
-        base.OnClosing(e);
-        if (!_reallyClose) { } // normal close from title bar is fine
-    }
-
     private Control Build()
     {
-        var sp = new StackPanel { Margin = new Thickness(16), Spacing = 8 };
+        var sp = new StackPanel { Margin = new Thickness(14), Spacing = 10 };
 
-        // ---- startup ----
+        // ================= STARTUP =================
         var startWin = new CheckBox { Content = "Start with Windows" };
         bool sw;
         lock (_vm.Settings) sw = _vm.Settings.StartWithWindows;
@@ -79,22 +74,22 @@ public sealed class SettingsWindow : Window
             _vm.Save();
         };
 
-        // ---- hotkey step ----
+        var startupCard = new Border { Classes = { "card" }, Child = new StackPanel { Spacing = 8, Children = { Section("STARTUP"), startWin, startMin } } };
+
+        // ================= BEHAVIOR =================
         float step;
         lock (_vm.Settings) step = _vm.Settings.HotkeyStep;
-        var stepBox = new NumericUpDown { Minimum = 1, Maximum = 10, Increment = 1, FormatString = "0", Width = 130,
+        var stepBox = new NumericUpDown { Minimum = 1, Maximum = 10, Increment = 1, FormatString = "0", Width = 110,
             Value = (decimal)Math.Round(step * 100), HorizontalAlignment = HorizontalAlignment.Left };
         stepBox.ValueChanged += (_, _) =>
         {
             lock (_vm.Settings) _vm.Settings.HotkeyStep = (float)Math.Clamp((double)(stepBox.Value ?? 5m), 1, 10) / 100f;
             _vm.Save();
         };
-        var stepRow = LabeledRow("Hotkey volume step (%)", stepBox);
 
-        // ---- OSD anchor ----
         string anchor;
         lock (_vm.Settings) anchor = string.IsNullOrWhiteSpace(_vm.Settings.OsdAnchor) ? "bottom-right" : _vm.Settings.OsdAnchor;
-        var osdBox = new ComboBox { MinWidth = 180, HorizontalAlignment = HorizontalAlignment.Left };
+        var osdBox = new ComboBox { MinWidth = 170, HorizontalAlignment = HorizontalAlignment.Left };
         foreach (var a in OsdAnchors) osdBox.Items.Add(DisplayAnchor(a));
         osdBox.SelectedIndex = Math.Max(0, Array.IndexOf(OsdAnchors, anchor));
         osdBox.SelectionChanged += (_, _) =>
@@ -103,18 +98,107 @@ public sealed class SettingsWindow : Window
             lock (_vm.Settings) _vm.Settings.OsdAnchor = OsdAnchors[idx];
             _vm.Save();
         };
-        var osdRow = LabeledRow("Volume popup position", osdBox);
 
-        // ---- theme (compact): dropdown + grid of pickers; 10 built-ins + 3 customs, all editable ----
+        var behaviorCard = new Border
+        {
+            Classes = { "card" },
+            Child = new StackPanel
+            {
+                Spacing = 10,
+                Children =
+                {
+                    Section("BEHAVIOR"),
+                    Row("Hotkey volume step", stepBox),
+                    Row("Volume popup position", osdBox),
+                },
+            },
+        };
+
+        // ================= OUTPUTS =================
+        var outputsCard = new Border { Classes = { "card" } };
+        var outputsSp = new StackPanel { Spacing = 10 };
+        outputsCard.Child = outputsSp;
+        outputsSp.Children.Add(Section("OUTPUTS"));
+
+        // visibility list (rebuilt on demand)
+        var visibilityHost = new StackPanel { Spacing = 6 };
+        outputsSp.Children.Add(new TextBlock { Text = "Visible on the main window dropdown", Classes = { "muted" }, FontSize = 11 });
+        outputsSp.Children.Add(visibilityHost);
+
+        void RebuildVisibilityList()
+        {
+            visibilityHost.Children.Clear();
+            List<OutputVm> all;
+            try
+            {
+                using var enumr = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+                all = enumr.EnumerateAudioEndPoints(NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.DeviceState.Active)
+                    .Select(d => { var vm = new OutputVm(d.ID, d.FriendlyName); d.Dispose(); return vm; })
+                    .OrderBy(o => o.Name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                visibilityHost.Children.Add(new TextBlock { Text = $"Could not list devices: {ex.Message}", Classes = { "muted" }, FontSize = 11 });
+                return;
+            }
+
+            foreach (var o in all)
+            {
+                var dev = o;
+                var cb = new CheckBox { VerticalAlignment = VerticalAlignment.Center };
+                lock (_vm.Settings)
+                    cb.IsChecked = OutputVisibility.IsVisible(_vm.Settings, dev.Id);
+                var name = new TextBlock { Text = dev.Name, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+                row.Children.Add(cb);
+                row.Children.Add(name);
+                cb.IsCheckedChanged += (_, _) =>
+                {
+                    bool vis = cb.IsChecked == true;
+                    lock (_vm.Settings)
+                    {
+                        // never hide the active output
+                        if (!vis && _vm.SelectedOutput?.Id == dev.Id) { cb.IsChecked = true; return; }
+                        OutputVisibility.SetVisible(_vm.Settings, dev.Id, vis);
+                    }
+                    _vm.Save();
+                    _vm.RefreshOutputs();   // main dropdown updates live
+                };
+                visibilityHost.Children.Add(row);
+            }
+        }
+        RebuildVisibilityList();
+
+        outputsSp.Children.Add(new TextBlock { Text = "SWITCH HOTKEYS", Classes = { "muted" }, FontSize = 10, FontWeight = FontWeight.SemiBold });
+
+        // prev/next hotkey capture boxes (same widget as the channel cards)
+        var prevBox = new HotkeyBox();
+        var nextBox = new HotkeyBox();
+        lock (_vm.Settings)
+        {
+            prevBox.HotkeyText = _vm.Settings.OutputPrevHotkey;
+            nextBox.HotkeyText = _vm.Settings.OutputNextHotkey;
+        }
+        prevBox.Committed += text => { lock (_vm.Settings) _vm.Settings.OutputPrevHotkey = text; _vm.Save(); _vm.RebindHotkeys(); };
+        nextBox.Committed += text => { lock (_vm.Settings) _vm.Settings.OutputNextHotkey = text; _vm.Save(); _vm.RebindHotkeys(); };
+        var hkRow = new Grid { ColumnDefinitions = { new ColumnDefinition(1, GridUnitType.Star), new ColumnDefinition(1, GridUnitType.Star) } };
+        var prevCell = new StackPanel { Spacing = 2, Margin = new Thickness(0, 0, 4, 0), Children = { new TextBlock { Text = "Previous output", Classes = { "muted" }, FontSize = 10 }, prevBox } };
+        var nextCell = new StackPanel { Spacing = 2, Margin = new Thickness(4, 0, 0, 0), Children = { new TextBlock { Text = "Next output", Classes = { "muted" }, FontSize = 10 }, nextBox } };
+        Grid.SetColumn(prevCell, 0);
+        Grid.SetColumn(nextCell, 1);
+        hkRow.Children.Add(prevCell);
+        hkRow.Children.Add(nextCell);
+        outputsSp.Children.Add(hkRow);
+
+        // ================= APPEARANCE =================
         var allThemes = CustomThemeStore.AllWithCustoms();
-        // PRISTINE snapshot for Reset: catalog entries are mutated in place during editing,
-        // so the "original" must be copied NOW, before any picker touches them
         var pristineById = ThemeCatalog.All.ToDictionary(
             t => t.Id,
             t => CustomThemeStore.CloneAsCustom(t, "__snap"));
         string themeId;
         lock (_vm.Settings) themeId = _vm.Settings.ThemeId;
-        var SyncAll = new List<Action>();   // swatch refreshers, run on theme switch
+        var SyncAll = new List<Action>();
         var themeBox = new ComboBox { MinWidth = 200, HorizontalAlignment = HorizontalAlignment.Left, FontSize = 12.5 };
         foreach (var t in allThemes) themeBox.Items.Add(t.Name);
         var cur = allThemes.FirstOrDefault(t => t.Id == themeId) ?? allThemes[0];
@@ -137,25 +221,17 @@ public sealed class SettingsWindow : Window
             ThemeManager.Apply(p);
             lock (_vm.Settings) _vm.Settings.ThemeId = p.Id;
             _vm.Save();
-            foreach (var r in SyncAll) r();   // swatches follow the newly-selected theme
+            foreach (var r in SyncAll) r();
             ThemeApplied?.Invoke();
         };
-        var themeRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        themeRow.Children.Add(new TextBlock { Text = "Theme", FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center });
-        themeRow.Children.Add(themeBox);
 
-        // reset: drop the saved override for the current slot (custom → deleted from file;
-        // built-in → built-ins aren't in the file at all, so this only matters for customs)
         var resetBtn = new Button { Content = "Reset to default", Classes = { "sono" }, Padding = new Thickness(10, 5), FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
         resetBtn.Click += (_, _) =>
         {
             var currentId = ThemeManager.Current.Id;
-            // remove any file override for this slot
             var customs = CustomThemeStore.Load();
             var removed = customs.RemoveAll(t => t.Id == currentId);
             if (removed > 0) CustomThemeStore.Save(customs);
-            // restore from the PRE-EDIT snapshot (the catalog object itself was mutated in
-            // place, so it can't be used as "pristine"), replace the stale entry in allThemes
             var pristine = pristineById.TryGetValue(currentId, out var snap)
                 ? new Palette
                 {
@@ -174,12 +250,15 @@ public sealed class SettingsWindow : Window
             ThemeManager.Apply(pristine);
             lock (_vm.Settings) _vm.Settings.ThemeId = pristine.Id;
             _vm.Save();
-            foreach (var r in SyncAll) r();   // force-refresh swatches + pickers
+            foreach (var r in SyncAll) r();
             ThemeApplied?.Invoke();
         };
+
+        var themeRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        themeRow.Children.Add(new TextBlock { Text = "Theme", FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center });
+        themeRow.Children.Add(themeBox);
         themeRow.Children.Add(resetBtn);
 
-        // compact picker: a small color rectangle that opens a ColorView flyout
         StackPanel MakeColorEntry(string label, Func<Palette, string> get, Action<Palette, Color> set)
         {
             var swatch = new Border { Width = 26, Height = 26, CornerRadius = new CornerRadius(5), Cursor = new Cursor(StandardCursorType.Hand) };
@@ -196,26 +275,22 @@ public sealed class SettingsWindow : Window
                 set(CurrentTheme(), e.NewColor);
                 swatch.Background = new SolidColorBrush(e.NewColor);
                 ApplyCurrent();
-                // persist ONLY the custom slots (built-ins are fixed)
                 if (CurrentTheme().Id.StartsWith("custom-"))
                     CustomThemeStore.Save(allThemes.Where(t => t.Id.StartsWith("custom-")));
+                else
+                    CustomThemeStore.Save(allThemes);   // built-in edits persist as overrides too
             };
-            // host: no fixed size — measure the ColorView's natural size, pad around it
             var host = new Border
             {
                 Background = MainWindow.Res("SonoElevatedBrush"),
                 CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(14),
+                Width = 356,
+                Height = 420,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 Child = view,
             };
-            var flyout = new Flyout
-            {
-                Placement = PlacementMode.Right,
-                Content = host,
-                HorizontalOffset = 8,
-            };
+            var flyout = new Flyout { Placement = PlacementMode.Right, Content = host, HorizontalOffset = 8 };
             FlyoutBase.SetAttachedFlyout(swatch, flyout);
             swatch.PointerPressed += (_, _) =>
             {
@@ -227,7 +302,7 @@ public sealed class SettingsWindow : Window
                 if (Color.TryParse(get(CurrentTheme()), out Color c))
                 {
                     swatch.Background = new SolidColorBrush(c);
-                    view.Color = c;   // reopened picker shows the restored color
+                    view.Color = c;
                 }
             });
             if (Color.TryParse(get(CurrentTheme()), out Color c0))
@@ -261,10 +336,12 @@ public sealed class SettingsWindow : Window
         appearance.Children.Add(new TextBlock { Text = "SURFACES", Classes = { "muted" }, FontSize = 10, FontWeight = FontWeight.SemiBold });
         appearance.Children.Add(surfaceColors);
 
-        // ---- about ----
+        var appearanceCard = new Border { Classes = { "card" }, Child = appearance };
+
+        // ================= ABOUT =================
         var about = new Border { Classes = { "card" }, Padding = new Thickness(14), CornerRadius = new CornerRadius(12) };
         var aboutSp = new StackPanel { Spacing = 6 };
-        aboutSp.Children.Add(new TextBlock { Text = "SONO 2.1.0", FontSize = 16, FontWeight = FontWeight.Bold });
+        aboutSp.Children.Add(new TextBlock { Text = "SONO 2.2.0", FontSize = 16, FontWeight = FontWeight.Bold });
         aboutSp.Children.Add(new TextBlock { Text = Desc, TextWrapping = TextWrapping.Wrap, Classes = { "muted" }, FontSize = 12 });
         var link = new Button { Content = "github.com/komabear/SONO-mixer", Classes = { "sono" }, Padding = new Thickness(8, 4) };
         link.Click += async (_, _) =>
@@ -275,15 +352,10 @@ public sealed class SettingsWindow : Window
         aboutSp.Children.Add(link);
         about.Child = aboutSp;
 
-        sp.Children.Add(Section("Startup"));
-        sp.Children.Add(startWin);
-        sp.Children.Add(startMin);
-        sp.Children.Add(Section("Behavior"));
-        sp.Children.Add(stepRow);
-        sp.Children.Add(osdRow);
-        sp.Children.Add(Section("Appearance"));
-        sp.Children.Add(appearance);
-        sp.Children.Add(Section("About"));
+        sp.Children.Add(startupCard);
+        sp.Children.Add(behaviorCard);
+        sp.Children.Add(outputsCard);
+        sp.Children.Add(appearanceCard);
         sp.Children.Add(about);
 
         return new ScrollViewer { Content = sp };
@@ -302,29 +374,18 @@ public sealed class SettingsWindow : Window
         _ => System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(a.Replace('-', ' ')),
     };
 
-    private static Palette CloneWith(Palette p, string? bg = null, string? card = null, string? text = null) => new()
-    {
-        Id = p.Id, Name = p.Name,
-        Bg = bg ?? p.Bg, Card = card ?? p.Card, Elevated = p.Elevated,
-        Field = p.Field, FieldFocus = p.FieldFocus, Chip = p.Chip,
-        Border = p.Border, Text = text ?? p.Text, Muted = p.Muted,
-        Accent = p.Accent, Danger = p.Danger,
-        Swatches = p.Swatches.ToArray(), GroupBgs = p.GroupBgs.ToArray(), LogoUri = p.LogoUri,
-    };
-
     private static Control Section(string title) => new TextBlock
     {
-        Text = title.ToUpperInvariant(),
+        Text = title,
         Classes = { "muted" },
-        FontSize = 11,
+        FontSize = 10,
         FontWeight = FontWeight.SemiBold,
-        Margin = new Thickness(0, 8, 0, 0),
     };
 
-    private static Control LabeledRow(string label, Control field)
+    private static Control Row(string label, Control field)
     {
-        var sp = new StackPanel { Spacing = 4 };
-        sp.Children.Add(new TextBlock { Text = label, FontSize = 12.5 });
+        var sp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        sp.Children.Add(new TextBlock { Text = label, FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center });
         sp.Children.Add(field);
         return sp;
     }

@@ -130,6 +130,12 @@ public sealed class HotkeyManager : IDisposable
 
     private readonly Dictionary<int, string> _textById = new();
 
+    // ---- special (non-channel) bindings: output prev/next ----
+    public const string OutputPrevChannel = "__output_prev";
+    public const string OutputNextChannel = "__output_next";
+    public const HotkeySlot OutputPrevSlot = (HotkeySlot)100;
+    public const HotkeySlot OutputNextSlot = (HotkeySlot)101;
+
     /// <summary>Replace ALL registrations with the given (hotkeyText → target) set. Returns per-binding error messages.</summary>
     public List<string> ApplyAll(IEnumerable<(string ChannelId, HotkeySlot Slot, string? HotkeyText)> bindings)
     {
