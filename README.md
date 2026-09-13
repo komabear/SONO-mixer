@@ -38,6 +38,8 @@ all apps play straight to your normal output  ◄┘
   9 screen positions + Off (⚙ → *Volume popup position*)
 - **System output switching** — from the app or the tray, current default
   check-marked, device list rebuilt fresh on every open
+- **Output management** — hide devices you never use from the dropdown
+  (⚙ → *Outputs*), and global hotkeys for **next/previous output** cycling
 - **Themes** — a dozen built-in palettes including Hatsune Miku (with her own logo),
   plus 3 editable custom slots: pick any color from a gradient picker for each group
   and surface, applied live; **Reset to default** restores factory colors anytime
@@ -55,7 +57,7 @@ all apps play straight to your normal output  ◄┘
 ## Setup — step by step
 
 1. **Install** — download
-   [`SONO-Setup.exe`](https://github.com/komabear/SONO-mixer/releases/download/v2.1.0/SONO-Setup.exe)
+   [`SONO-Setup.exe`](https://github.com/komabear/SONO-mixer/releases/download/v2.2.0/SONO-Setup.exe)
    from [Releases](https://github.com/komabear/SONO-mixer/releases) and run it. That's the
    whole setup: no drivers, no audio devices, no restarts, no admin prompts.
 2. **Assign apps** — start an app and play something; it appears in the Applications
