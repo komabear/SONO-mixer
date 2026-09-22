@@ -20,6 +20,7 @@ public sealed class AudioEngine : IDisposable
     private Func<IReadOnlyList<ChannelDefinition>>? _channelSource;
     private System.Threading.Timer? _timer;
     private MMDevice? _render;
+    private List<MMDevice>? _tempDevices;
 
     public event Action<EngineSnapshot>? Tick;
 
@@ -82,7 +83,9 @@ public sealed class AudioEngine : IDisposable
                 // enumerate sessions on ALL active render devices (an app mid-misroute, or on
                 // a cable, is exactly the app the user needs to see in the Applications list)
                 var seen = new HashSet<string>();
-                foreach (var dev in _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
+                _tempDevices = new List<MMDevice>();
+                _tempDevices.AddRange(_enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active));
+                foreach (var dev in _tempDevices)
                 {
                     AudioSessionManager? mgr;
                     try { mgr = dev.AudioSessionManager; } catch { continue; }
@@ -109,6 +112,16 @@ public sealed class AudioEngine : IDisposable
                 error = ex.Message;
                 _render = null;   // device may have changed; retry from scratch next tick
                 return new EngineSnapshot(sessions, outputName, error);
+            }
+            finally
+            {
+                // MMDevice COM objects from EnumerateAudioEndPoints MUST be disposed every tick
+                // or they accumulate as native memory (~15MB/min observed)
+                if (_tempDevices is not null)
+                {
+                    foreach (var d in _tempDevices) { try { d.Dispose(); } catch { } }
+                    _tempDevices = null;
+                }
             }
         }
     }
