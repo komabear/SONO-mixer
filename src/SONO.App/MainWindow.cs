@@ -101,6 +101,21 @@ public sealed class MainWindow : Window
         Closed += OnClosed;
         AddHandler(PointerMovedEvent, OnPointerMoved, RoutingStrategies.Tunnel);   // ghost follow (tunnel: beats children)
 
+        // periodic memory trim while hidden to tray: compact + return pages to the OS
+        var trimTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMinutes(5) };
+        trimTimer.Tick += (_, _) =>
+        {
+            try
+            {
+                if (IsVisible) return;
+                GC.Collect(2, GCCollectionMode.Aggressive, true, true);
+                GC.WaitForPendingFinalizers();
+                _ = GC.TryStartNoGCRegion(64 * 1024 * 1024, true);
+            }
+            catch { }
+        };
+        trimTimer.Start();
+
         Dispatcher.UIThread.Post(() =>
         {
             try
@@ -278,15 +293,38 @@ public sealed class MainWindow : Window
         return panelGrid;   // three stacked boxes: controlBox / applications card / logoBox
     }
 
+    private readonly HashSet<AppRowVm> _updateQueued = new();
+
     private void SyncAppRows()
     {
-        _appsHost.Children.Clear();
+        // incremental: only build rows for NEW vms, remove dead ones, then reorder —
+        // rebuilding the whole panel every tick leaked event subscriptions and bitmaps
+        for (int i = _appsHost.Children.Count - 1; i >= 0; i--)
+        {
+            var vm = _appsHost.Children[i].Tag as AppRowVm;
+            if (vm is null || _vm.Apps.All(r => !ReferenceEquals(r, vm)))
+                _appsHost.Children.RemoveAt(i);
+        }
         _appRows.Clear();
+        foreach (var child in _appsHost.Children)
+            if (child.Tag is AppRowVm vm) _appRows[vm] = (Border)child;
+
         foreach (var row in _vm.Apps)
         {
+            if (_appRows.ContainsKey(row)) continue;   // existing row — keep controls + subscriptions
             var b = BuildAppRow(row);
+            b.Tag = row;
             _appRows[row] = b;
             _appsHost.Children.Add(b);
+        }
+
+        // apply current sort order without rebuilding
+        for (int i = 0; i < _vm.Apps.Count; i++)
+        {
+            var child = _appRows[_vm.Apps[i]];
+            if (i < _appsHost.Children.Count && ReferenceEquals(_appsHost.Children[i], child)) continue;
+            _appsHost.Children.Remove(child);
+            _appsHost.Children.Insert(Math.Min(i, _appsHost.Children.Count), child);
         }
     }
 
@@ -373,7 +411,15 @@ public sealed class MainWindow : Window
             }
         }
         Update(row);
-        row.PropertyChanged += (_, e) => Dispatcher.UIThread.Post(() => Update(row));
+        row.PropertyChanged += (_, e) =>
+        {
+            if (_updateQueued.Add(row))
+                Dispatcher.UIThread.Post(() =>
+                {
+                    _updateQueued.Remove(row);
+                    Update(row);
+                });
+        };
 
         // threshold-based drag start: the synchronous DoDragDrop-inside-PointerPressed
         // pattern is flaky in Avalonia; the reliable path is track → threshold → drag
