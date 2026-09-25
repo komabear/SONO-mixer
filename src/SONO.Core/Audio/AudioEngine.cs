@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Globalization;
 using NAudio.CoreAudioApi;
 
+using System.Runtime.InteropServices;
+
 namespace SONO.Core.Audio;
 
 /// <summary>
@@ -21,7 +23,18 @@ public sealed class AudioEngine : IDisposable
     private System.Threading.Timer? _timer;
     private MMDevice? _render;
     private List<MMDevice>? _tempDevices;
+    private readonly Dictionary<string, AudioSessionManager> _sessionManagers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, SimpleAudioVolume> _volumeCache = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>dev.AudioSessionManager allocates a fresh COM wrapper per call; cache per
+    /// device so ticks reuse one instance (native COM leak fix).</summary>
+    private AudioSessionManager GetSessionManager(MMDevice dev)
+    {
+        if (_sessionManagers.TryGetValue(dev.ID, out var mgr)) return mgr;
+        mgr = dev.AudioSessionManager;
+        _sessionManagers[dev.ID] = mgr;
+        return mgr;
+    }
     public event Action<EngineSnapshot>? Tick;
 
     /// <summary>Engine pulls the current channel list every tick; call whenever settings change.</summary>
@@ -88,7 +101,7 @@ public sealed class AudioEngine : IDisposable
                 foreach (var dev in _tempDevices)
                 {
                     AudioSessionManager? mgr;
-                    try { mgr = dev.AudioSessionManager; } catch { continue; }
+                    try { mgr = GetSessionManager(dev); } catch { continue; }
                     var sessions2 = mgr.Sessions;
                     for (int i = 0; i < sessions2.Count; i++)
                     {
@@ -104,6 +117,8 @@ public sealed class AudioEngine : IDisposable
                 if (_touched.Count > 0)
                     foreach (var dead in _touched.Keys.Where(k => !seen.Contains(k)).ToList())
                         _touched.Remove(dead);
+                foreach (var dead in _volumeCache.Keys.Where(k => !seen.Contains(k)).ToList())
+                    _volumeCache.Remove(dead);
 
                 return new EngineSnapshot(sessions, outputName, null);
             }
@@ -116,7 +131,9 @@ public sealed class AudioEngine : IDisposable
             finally
             {
                 // MMDevice COM objects from EnumerateAudioEndPoints MUST be disposed every tick
-                // or they accumulate as native memory (~15MB/min observed)
+                // or they accumulate as native memory (~15MB/min observed).
+                // NOTE: AudioSessionManagers obtained from them are CACHED (see GetSessionManager)
+                // and must NOT be released here — they stay alive for the device's lifetime.
                 if (_tempDevices is not null)
                 {
                     foreach (var d in _tempDevices) { try { d.Dispose(); } catch { } }
@@ -156,7 +173,13 @@ public sealed class AudioEngine : IDisposable
             var target = (Vol: owner.Volume, Mute: owner.Muted);
             try
             {
-                var vol = asc.SimpleAudioVolume;
+                // asc.SimpleAudioVolume allocates a fresh COM wrapper per access — cache per
+                // session so idle ticks don't leak native ISimpleAudioVolume/AudioMixer objects
+                if (!_volumeCache.TryGetValue(key, out var vol))
+                {
+                    vol = asc.SimpleAudioVolume;
+                    _volumeCache[key] = vol;
+                }
                 if (Math.Abs(vol.Volume - target.Vol) > 0.001f) vol.Volume = target.Vol;
                 if (vol.Mute != target.Mute) vol.Mute = target.Mute;
             }
@@ -232,6 +255,9 @@ public sealed class AudioEngine : IDisposable
             try { Reconcile(Array.Empty<ChannelDefinition>()); } catch { } // restore everything we touched
             _render?.Dispose();
             _render = null;
+            foreach (var m in _sessionManagers.Values) { try { Marshal.ReleaseComObject(m); } catch { } }
+            _sessionManagers.Clear();
+            _volumeCache.Clear();
         }
     }
 }
