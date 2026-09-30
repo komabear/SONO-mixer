@@ -272,13 +272,13 @@ public sealed class SettingsWindow : Window
             };
             view.ColorChanged += (_, e) =>
             {
+                if (get(CurrentTheme()).Equals(e.NewColor.ToString(), StringComparison.OrdinalIgnoreCase))
+                    return;   // no-op color event (theme refresh etc.) — don't save-storm
                 set(CurrentTheme(), e.NewColor);
                 swatch.Background = new SolidColorBrush(e.NewColor);
                 ApplyCurrent();
-                if (CurrentTheme().Id.StartsWith("custom-"))
-                    CustomThemeStore.Save(allThemes.Where(t => t.Id.StartsWith("custom-")));
-                else
-                    CustomThemeStore.Save(allThemes);   // built-in edits persist as overrides too
+                // store keeps customs always + built-ins that differ from catalog
+                CustomThemeStore.Save(allThemes);
             };
             var host = new Border
             {
