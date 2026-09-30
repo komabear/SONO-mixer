@@ -4,7 +4,7 @@
 ; through Windows' own session APIs.
 
 #define MyAppName "SONO Mixer"
-#define MyAppVersion "2.2.0"
+#define MyAppVersion "2.2.1"
 #define MyAppPublisher "komabear"
 #define MyAppExeName "SONO.App.exe"
 
