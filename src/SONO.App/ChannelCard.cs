@@ -30,6 +30,16 @@ public sealed class ChannelCard : Border
     private readonly WrapPanel _chips;
     private bool _draggingSlider;
     private bool _dragHover;
+    private static ChannelCard? _hovered;   // the one card currently showing the drag tint
+
+    /// <summary>Clear the drag tint on whichever card has it (DragLeave is unreliable when moving between cards).</summary>
+    internal static void ClearDragHover()
+    {
+        var c = _hovered;
+        _hovered = null;
+        if (c is not null && c._dragHover) { c._dragHover = false; c.RefreshTheme(); }
+    }
+
     private readonly System.Diagnostics.Stopwatch _liveThrottle = new();
     private Thumb? _thumb;
     private IBrush? _thumbBrush;
@@ -297,6 +307,8 @@ public sealed class ChannelCard : Border
         e.DragEffects = e.Data.Contains(DataFormats.Text) ? DragDropEffects.Copy : DragDropEffects.None;
         if (e.DragEffects != DragDropEffects.None && !_dragHover)
         {
+            if (_hovered is not null && !ReferenceEquals(_hovered, this)) ClearDragHover();
+            _hovered = this;
             _dragHover = true;
             RefreshTheme();   // single source of truth for backgrounds
         }
@@ -331,6 +343,7 @@ public sealed class ChannelCard : Border
     private void OnDrop(object? sender, DragEventArgs e)
     {
         _dragHover = false;
+        if (ReferenceEquals(_hovered, this)) _hovered = null;
         RefreshTheme();   // clear the drag-over tint
         SONO.Core.Diagnostics.Log.Write($"drop {_ch.Name} text={e.Data.GetText()}");
         if (e.Data.GetText() is string exe && !string.IsNullOrWhiteSpace(exe))

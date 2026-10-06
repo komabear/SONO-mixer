@@ -23,6 +23,7 @@ public sealed class AudioEngine : IDisposable
     private System.Threading.Timer? _timer;
     private MMDevice? _render;
     private List<MMDevice>? _tempDevices;
+    private readonly Dictionary<string, MMDevice> _devices = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, AudioSessionManager> _sessionManagers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SimpleAudioVolume> _volumeCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -97,11 +98,27 @@ public sealed class AudioEngine : IDisposable
                 // a cable, is exactly the app the user needs to see in the Applications list)
                 var seen = new HashSet<string>();
                 _tempDevices = new List<MMDevice>();
-                _tempDevices.AddRange(_enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active));
-                foreach (var dev in _tempDevices)
+                var fresh = _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active).ToList();
+                var activeIds = new HashSet<string>(fresh.Select(d => d.ID));
+                // keep ONE long-lived MMDevice per endpoint: disposing an MMDevice also disposes its
+                // AudioSessionManager, so the cached manager must outlive the per-tick wrappers
+                foreach (var d in fresh)
+                {
+                    if (_devices.ContainsKey(d.ID)) _tempDevices.Add(d);   // duplicate wrapper → dispose in finally
+                    else _devices[d.ID] = d;
+                }
+                foreach (var gone in _devices.Keys.Where(k => !activeIds.Contains(k)).ToList())
+                {
+                    try { _devices[gone].Dispose(); } catch { }
+                    _devices.Remove(gone);
+                    _sessionManagers.Remove(gone);
+                }
+                foreach (var dev in activeIds.Select(id => _devices[id]))
                 {
                     AudioSessionManager? mgr;
                     try { mgr = GetSessionManager(dev); } catch { continue; }
+                    // NAudio caches the session list; refresh so apps that start playing later appear
+                    try { mgr.RefreshSessions(); } catch (Exception rex) { SONO.Core.Diagnostics.Log.Write($"RefreshSessions failed on {dev.FriendlyName}: {rex.Message}"); continue; }
                     var sessions2 = mgr.Sessions;
                     for (int i = 0; i < sessions2.Count; i++)
                     {
@@ -257,6 +274,8 @@ public sealed class AudioEngine : IDisposable
             _render = null;
             foreach (var m in _sessionManagers.Values) { try { Marshal.ReleaseComObject(m); } catch { } }
             _sessionManagers.Clear();
+            foreach (var d in _devices.Values) { try { d.Dispose(); } catch { } }
+            _devices.Clear();
             _volumeCache.Clear();
         }
     }

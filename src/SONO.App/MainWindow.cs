@@ -520,6 +520,7 @@ public sealed class MainWindow : Window
 
     private void GhostHide()
     {
+        ChannelCard.ClearDragHover();   // drag over: no card may stay lit
         _ghostOn = false;
         _ghostTimer?.Stop();
         _ghost.IsVisible = false;
