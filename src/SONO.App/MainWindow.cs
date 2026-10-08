@@ -1,4 +1,5 @@
 using Avalonia;
+using SONO.Core.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -112,7 +113,7 @@ public sealed class MainWindow : Window
                 GC.WaitForPendingFinalizers();
                 _ = GC.TryStartNoGCRegion(64 * 1024 * 1024, true);
             }
-            catch { }
+            catch (Exception ex) { Log.Write("trim: " + ex.Message); }
         };
         trimTimer.Start();
 
@@ -634,8 +635,8 @@ public sealed class MainWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
-        try { _osd?.Close(); } catch { }
-        try { _tray?.Dispose(); } catch { }
+        try { _osd?.Close(); } catch (Exception ex) { Log.Write("close osd: " + ex.Message); }
+        try { _tray?.Dispose(); } catch (Exception ex) { Log.Write("close tray: " + ex.Message); }
     }
 
     // ---------------- helpers ----------------

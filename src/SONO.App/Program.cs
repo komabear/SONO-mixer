@@ -21,7 +21,7 @@ internal static class Program
                 showSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\SONO.ShowSignal");
                 showSignal.Set();
             }
-            catch { }
+            catch (Exception ex) { Log.Write("show-signal: " + ex.Message); }
             return;
         }
         try

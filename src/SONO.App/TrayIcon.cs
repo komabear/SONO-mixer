@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using SONO.Core.Diagnostics;
 
 namespace SONO.App;
 
@@ -208,7 +209,7 @@ public sealed class TrayIcon : IDisposable
                     return small[0];
             }
         }
-        catch { }
+        catch (Exception ex) { Log.Write("tray: ExtractIconEx fallback failed: " + ex.Message); }
         return LoadIcon(IntPtr.Zero, IDI_APPLICATION);
     }
 
