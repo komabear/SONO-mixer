@@ -21,9 +21,6 @@ public sealed class ChannelDefinition
     public ChannelKind Kind { get; set; } = ChannelKind.Group;
     public string ColorHex { get; set; } = "#7aa2f7";
 
-    /// <summary>Playback endpoint this channel captures (a VAC "Line N"). Null = session-ownership group mode.</summary>
-    public string? DeviceId { get; set; }
-
     /// <summary>Lower-case executable names assigned to this channel ("spotify.exe"). "system" = Windows sounds.</summary>
     public List<string> Executables { get; set; } = new();
 
