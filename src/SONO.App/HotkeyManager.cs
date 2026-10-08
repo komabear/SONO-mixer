@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using SONO.Core.Diagnostics;
 using SONO.Core.Audio;
 
 namespace SONO.App;
@@ -228,7 +229,7 @@ public sealed class HotkeyManager : IDisposable
 
     public void Dispose()
     {
-        foreach (var id in _registered.Keys) try { UnregisterHotKey(_hwnd, id); } catch { }
+        foreach (var id in _registered.Keys) try { UnregisterHotKey(_hwnd, id); } catch (Exception ex) { Log.Write("hotkey unregister failed: " + ex.Message); }
         _registered.Clear();
     }
 }

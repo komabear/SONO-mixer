@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using SONO.Core.Diagnostics;
 
 namespace SONO.App;
 
@@ -116,7 +117,7 @@ public static class AppIcon
                 }
             }
         }
-        catch { }
+        catch (Exception ex) { Log.Write("hicon→bitmap failed: " + ex.Message); }
         return null;
     }
 
@@ -153,10 +154,10 @@ public static class AppIcon
     private static extern int GetDIBits(IntPtr hdc, IntPtr hbmp, uint start, uint lines,
         byte[] bits, ref BITMAPINFO bmi, uint usage);
 
-    [DllImport("gdi32.dll")]
+    [DllImport("user32.dll")]
     private static extern IntPtr GetDC(IntPtr hWnd);
 
-    [DllImport("gdi32.dll")]
+    [DllImport("user32.dll")]
     private static extern int ReleaseDC(IntPtr hWnd, IntPtr hdc);
 
     [DllImport("gdi32.dll")]

@@ -1,4 +1,5 @@
 using Avalonia;
+using SONO.Core.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
@@ -105,7 +106,7 @@ public class App : Application
                         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                         {
                             try { win.Show(); win.WindowState = WindowState.Normal; win.Activate(); }
-                            catch { }
+                            catch (Exception ex) { Log.Write("show-signal failed: " + ex.Message); }
                         });
                     }
                 });
@@ -113,9 +114,9 @@ public class App : Application
 
             desktop.Exit += (_, _) =>
             {
-                try { vm.RebindHotkeys(); } catch { }
-                try { engine.Dispose(); } catch { }
-                try { hotkeys.Dispose(); } catch { }
+                try { vm.RebindHotkeys(); } catch (Exception ex) { Log.Write("exit: RebindHotkeys failed: " + ex.Message); }
+                try { engine.Dispose(); } catch (Exception ex) { Log.Write("exit: engine dispose failed: " + ex.Message); }
+                try { hotkeys.Dispose(); } catch (Exception ex) { Log.Write("exit: hotkeys dispose failed: " + ex.Message); }
             };
         }
         base.OnFrameworkInitializationCompleted();

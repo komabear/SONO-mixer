@@ -243,7 +243,10 @@ public sealed class AudioEngine : IDisposable
         {
             using var p = Process.GetProcessById((int)pid);
             exe = p.ProcessName.ToLowerInvariant();
-            title = p.MainWindowTitle ?? "";
+            // MainWindowTitle is an expensive Win32 enumeration; only try it ONCE per pid and
+            // accept "no window" without retrying (firewall: a stubborn pid must not cost us
+            // a full window walk every tick)
+            try { title = p.MainWindowTitle ?? ""; } catch { title = ""; }
         }
         catch { /* process exited */ }
         var v = (exe, title);
