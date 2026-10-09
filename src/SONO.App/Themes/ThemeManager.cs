@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Media;
+using Avalonia.Styling;
 
 namespace SONO.App.Themes;
 
@@ -16,6 +17,14 @@ public static class ThemeManager
     {
         _current = p;
         if (Application.Current is null) return;
+        // Fluent's templates (text boxes, combos, buttons, checkbox glyphs) color themselves
+        // from the ACTIVE THEME VARIANT, not from our brushes. A light palette under the
+        // Dark variant renders light-on-light / dark-on-dark. Flip the variant by luminance:
+        if (Color.Parse(p.Bg) is var bg &&
+            (bg.R * 299 + bg.G * 587 + bg.B * 114) / 1000 > 128)
+            Application.Current.RequestedThemeVariant = ThemeVariant.Light;
+        else
+            Application.Current.RequestedThemeVariant = ThemeVariant.Dark;
         var r = Application.Current.Resources;
         r["SonoBg"] = Color.Parse(p.Bg);
         r["SonoCard"] = Color.Parse(p.Card);
