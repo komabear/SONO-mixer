@@ -145,12 +145,13 @@ public sealed class Fader : Panel
         _fill.ClipToBounds = true;   // clip the core to the fill's (dynamic) rounding
         ArrangeChild(_fill, 0, h - fillH, trackW, fillH);   // coords relative to the TRACK
 
-        // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored, height =
-        // smoothed live level relative to the volume fill. Reads as the "moving" part of
-        // the liquid inside the static volume pill.
+        // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored. The displayed
+        // height LERPs toward the live level every frame (exponential chase) — soft motion,
+        // no snap; rising and falling feel identical.
         double target = Math.Clamp(Level, 0, 1);
-        if (target >= _smoothed) _smoothed = target;                    // instant attack
-        else _smoothed = Math.Max(target, _smoothed * 0.85);            // graceful fall
+        const double lerpK = 0.22;          // fraction of the remaining gap closed per frame
+        _smoothed += (target - _smoothed) * lerpK;
+        if (Math.Abs(target - _smoothed) < 0.001) _smoothed = target;   // settle exactly
         double level = _smoothed;
 
         if (_meter is not null)
@@ -169,7 +170,7 @@ public sealed class Fader : Panel
                 if (_fallTimer is null)
                 {
                     _fallTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
-                    _fallTimer.Tick += (_, _) => { if (_smoothed > 0.004) { _smoothed *= 0.88; InvalidateArrange(); } else { _fallTimer?.Stop(); _fallTimer = null; } };
+                    _fallTimer.Tick += (_, _) => InvalidateArrange();   // continuous lerp is driven here
                     _fallTimer.Start();
                 }
             }
