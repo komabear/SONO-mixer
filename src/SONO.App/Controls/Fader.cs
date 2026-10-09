@@ -149,11 +149,16 @@ public sealed class Fader : Panel
         if (_meter is not null)
         {
             const double inset = 5;          // same border on all four sides
-            double coreH = Math.Min(fillH, fillH * level) - inset;   // leave room for the bottom border
-            if (coreH > 3)
+            // whole-pixel height: sub-pixel sizes made the bottom edge wobble ±1px
+            double coreH = Math.Floor(Math.Min(fillH - inset, fillH * level));
+            if (coreH > 2)
             {
                 double coreW = trackW - inset * 2;
-                ArrangeChild(_meter, x + inset, h - coreH - inset, coreW, coreH);
+                // bottom edge pinned: y is derived from the fixed bottom line, never from coreH
+                ArrangeChild(_meter, x + inset, h - inset - coreH, coreW, coreH);
+                // top corners round like the pill's inner curve; shrink for very short bars
+                double r = Math.Min(17, coreH / 2);
+                _meter.CornerRadius = new CornerRadius(r, r, 17, 17);
                 _meter.IsVisible = true;
                 if (_fallTimer is null)
                 {
@@ -165,6 +170,7 @@ public sealed class Fader : Panel
             else
             {
                 _meter.IsVisible = false;
+                _meter.CornerRadius = new CornerRadius(17, 17, 17, 17);
             }
         }
 
