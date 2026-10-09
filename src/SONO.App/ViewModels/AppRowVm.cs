@@ -43,11 +43,15 @@ public sealed class AppRowVm : ObservableObject
     private string _groupName = "";
     public string GroupName { get => _groupName; private set => Set(ref _groupName, value); }
 
+    private double _peak;
+    public double Peak { get => _peak; private set => Set(ref _peak, value); }
+
     public void Update(SessionView s, string? groupName)
     {
         Name = s.DisplayName;
         SessionVol = s.Volume;
         SessionMuted = s.Mute;
+        Peak = s.Peak;
         Group = s.ChannelId;
         GroupName = groupName ?? "";
     }

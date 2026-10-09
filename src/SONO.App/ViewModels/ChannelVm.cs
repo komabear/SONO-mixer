@@ -50,6 +50,13 @@ public sealed class ChannelVm : ObservableObject
     private int _volumePct;
     public int VolumePct { get => _volumePct; private set => Set(ref _volumePct, value); }
 
+    private double _level;
+    /// <summary>Live output level 0..1 (max member-session meter) — drives the fader wave.</summary>
+    public double Level { get => _level; private set => Set(ref _level, value); }
+
+    /// <summary>Called from the engine tick (background thread) — UI reads it via the strip.</summary>
+    public void SetPeak(double peak) => Level = Math.Clamp(peak, 0, 1);
+
     private string? _volDownKey;
     public string? VolDownKey { get => _volDownKey; private set => Set(ref _volDownKey, value); }
     private string? _volUpKey;

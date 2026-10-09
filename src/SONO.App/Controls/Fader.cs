@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.Threading;
 
 namespace SONO.App.Controls;
 
@@ -26,7 +27,14 @@ public sealed class Fader : Panel
 
     private Border? _track;
     private Border? _fill;
+    private Avalonia.Controls.Shapes.Path? _wave;
+    private DispatcherTimer? _waveTimer;
+    private double _phase;
     private bool _dragging;
+
+    /// <summary>Live output level 0..1 for this channel (engine peak). Drives wave amplitude.</summary>
+    public static readonly StyledProperty<double> LevelProperty = AvaloniaProperty.Register<Fader, double>(nameof(Level), 0);
+    public double Level { get => GetValue(LevelProperty); set => SetValue(LevelProperty, value); }
 
     public event Action? ValueChanged;
     public event Action? CommitRequested;
@@ -63,9 +71,19 @@ public sealed class Fader : Panel
             IsHitTestVisible = false,
         };
         _fill = new Border { CornerRadius = new CornerRadius(22), IsHitTestVisible = false };
+        _wave = new Avalonia.Controls.Shapes.Path
+        {
+            IsHitTestVisible = false,
+            Opacity = 0.9,
+        };
         Children.Add(_track);
         Children.Add(_fill);
+        Children.Add(_wave);
         UpdateColors();
+
+        // wave animation: only ticks when there's sound to show
+        _waveTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
+        _waveTimer.Tick += (_, _) => { _phase += 0.35; InvalidateArrange(); };
     }
 
     private void UpdateColors()
@@ -112,6 +130,44 @@ public sealed class Fader : Panel
 
         ArrangeChild(_track, x, 0, trackW, h);
         ArrangeChild(_fill, x, h - fillH, trackW, fillH);
+
+        // water surface: sine wave across the fill's top edge; amplitude scales with Level,
+        // phase animates so it sloshes. Skipped entirely when idle (no timer, no cost).
+        double level = Math.Clamp(Level, 0, 1);
+        bool timerShouldRun = level > 0.02 && fillH > 20 && _track is not null;
+        if (timerShouldRun && _waveTimer is not null && !_waveTimer.IsEnabled) _waveTimer.Start();
+        if (!timerShouldRun && _waveTimer is not null && _waveTimer.IsEnabled) _waveTimer.Stop();
+
+        if (_wave is not null)
+        {
+            if (!timerShouldRun)
+            {
+                _wave.Data = null;
+            }
+            else
+            {
+                double amp = 1.5 + level * 5.5;
+                double surfaceY = h - fillH;
+                var geo = new StreamGeometry();
+                using (var ctx = geo.Open())
+                {
+                    ctx.BeginFigure(new Point(x, surfaceY), true);
+                    int steps = 12;
+                    for (int i = 1; i <= steps; i++)
+                    {
+                        double t = (double)i / steps;
+                        double wx = x + trackW * t;
+                        double wy = surfaceY + Math.Sin(t * Math.PI * 2.2 + _phase) * amp;
+                        ctx.LineTo(new Point(wx, wy));
+                    }
+                    ctx.LineTo(new Point(x + trackW, surfaceY + 6));
+                    ctx.LineTo(new Point(x, surfaceY + 6));
+                    ctx.EndFigure(true);
+                }
+                _wave.Data = geo;
+                ArrangeChild(_wave, 0, 0, w, h);
+            }
+        }
 
         return finalSize;
     }

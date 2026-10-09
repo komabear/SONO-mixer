@@ -109,7 +109,13 @@ public sealed class ChannelStrip : Border
         DragDrop.SetAllowDrop(this, true);   // REQUIRED in Avalonia: without it DragOver/Drop never fire
         Build();
 
-        _ch.PropertyChanged += (_, e) => Dispatcher.UIThread.Post(() => SyncFromVm(e.PropertyName));
+        _ch.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ChannelVm.Level))
+                Dispatcher.UIThread.Post(() => _fader.Level = _ch.Level);
+            else
+                Dispatcher.UIThread.Post(() => SyncFromVm(e.PropertyName));
+        };
         _ch.Apps.CollectionChanged += (_, _) => Dispatcher.UIThread.Post(SyncCount);
         RefreshTheme();
         SyncFromVm(null);
