@@ -64,16 +64,9 @@ public sealed class Fader : Panel
         Background = Brushes.Transparent;
         ClipToBounds = true;
 
-        // structure: TRACK (pill clip) ──> FILL (clipped child, full-height container) ──> CORE
+        // structure: TRACK (pill clip) ──> FILL (clipped child) ──> CORE
         // the track's rounded corners clip everything inside at EVERY height — no radius
         // juggling at low volume
-        _track = new Border
-        {
-            CornerRadius = new CornerRadius(22),
-            Background = new ImmutableSolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
-            ClipToBounds = true,          // rounds all children: fill + core
-            Child = _fill,
-        };
         _fill = new Border
         {
             IsHitTestVisible = false,
@@ -86,6 +79,13 @@ public sealed class Fader : Panel
             CornerRadius = new CornerRadius(3, 3, 3, 3),
         };
         _fill.Child = _meter;
+        _track = new Border
+        {
+            CornerRadius = new CornerRadius(22),
+            Background = new ImmutableSolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
+            ClipToBounds = true,          // rounds all children: fill + core
+            Child = _fill,                // attach AFTER _fill exists (ctor ordering!)
+        };
         Children.Add(_track);
         UpdateColors();
     }
