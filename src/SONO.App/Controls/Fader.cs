@@ -120,6 +120,17 @@ public sealed class Fader : Panel
         }
     }
 
+    /// <summary>Auto-gain + gamma mapping from the raw level to the displayed target —
+    /// ONE definition so the arrange pass and the chaser timer always agree.</summary>
+    private double TargetFrom(double raw, double recentMax)
+    {
+        raw = Math.Clamp(raw, 0, 1);
+        _recentMax = Math.Max(raw, recentMax * 0.97);      // fast ~300ms adaptation
+        if (_recentMax < 0.25) _recentMax = 0.25;          // floor: silence stays calm
+        double normalized = raw / _recentMax;
+        return 1 - Math.Pow(1 - Math.Clamp(normalized, 0, 1), 3);
+    }
+
     protected override Size MeasureOverride(Size availableSize)
     {
         // children are positioned manually; they need no intrinsic size
@@ -153,11 +164,7 @@ public sealed class Fader : Panel
         // unpin them. Track a decaying rolling max (~2s) and normalize against it: the bar
         // ALWAYS uses the full range relative to recent loudness, so changes stay visible
         // at any volume. Gamma on top for extra spread.
-        double raw = Math.Clamp(Level, 0, 1);
-        _recentMax = Math.Max(raw, _recentMax * 0.97);     // fast ~300ms adaptation
-        if (_recentMax < 0.25) _recentMax = 0.25;          // floor: silence stays calm
-        double normalized = raw / _recentMax;
-        double target = 1 - Math.Pow(1 - Math.Clamp(normalized, 0, 1), 3);
+        double target = TargetFrom(Level, _recentMax);
         const double lerpK = 0.22;          // fraction of the remaining gap closed per frame
         _smoothed += (target - _smoothed) * lerpK;
         if (Math.Abs(target - _smoothed) < 0.001) _smoothed = target;   // settle exactly
@@ -181,8 +188,7 @@ public sealed class Fader : Panel
                     _fallTimer.Tick += (_, _) =>
                     {
                         // advance the lerp even without new engine ticks, stop when settled
-                        double t = Math.Clamp(Level, 0, 1);
-                        double tgt = 1 - Math.Pow(1 - t, 2);
+                        double tgt = TargetFrom(Math.Clamp(Level, 0, 1), _recentMax);
                         _smoothed += (tgt - _smoothed) * 0.22;
                         if (Math.Abs(tgt - _smoothed) < 0.001) { _smoothed = tgt; _fallTimer?.Stop(); _fallTimer = null; }
                         InvalidateArrange();
