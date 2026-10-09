@@ -80,7 +80,24 @@ public sealed class MixerVm : ObservableObject
         _hotkeys.Pressed += OnHotkey;
     }
 
-    public void Start() => _engine.Start();
+    public void Start()
+    {
+        lock (Settings) _engine.MeteringEnabled = Settings.ShowEqualizers;
+        _engine.Start();
+    }
+
+    /// <summary>Toggle equalizers on/off live (settings checkbox).</summary>
+    public void SetMeteringEnabled(bool enabled)
+    {
+        lock (Settings) Settings.ShowEqualizers = enabled;
+        Save();
+        _engine.MeteringEnabled = enabled;
+    }
+
+    public bool GetMeteringEnabled()
+    {
+        lock (Settings) return Settings.ShowEqualizers;
+    }
 
     // ---------------- engine callbacks (threadpool thread!) ----------------
 

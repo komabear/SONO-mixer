@@ -35,6 +35,10 @@ public sealed class AppSettings
 
     /// <summary>Global hotkey for switching to the next visible output; empty = unbound.</summary>
     public string? OutputNextHotkey { get; set; }
+    /// <summary>Master toggle for the equalizer bars (level meters) on channel strips.
+    /// When off, all metering is disabled (zero metering cost).</summary>
+    public bool ShowEqualizers { get; set; } = true;
+
     /// <summary>True once the app has written the autostart Run key for the first time —
     /// prevents re-asserting it (and re-pointing it at a different exe path) every launch.</summary>
     public bool AutostartConfigured { get; set; }
