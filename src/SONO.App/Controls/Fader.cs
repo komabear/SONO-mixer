@@ -174,8 +174,6 @@ public sealed class Fader : Panel
         {
             // whole-pixel height: sub-pixel sizes made the bottom edge wobble ±1px
             double coreH = Math.Floor(Math.Min(fillH, fillH * level));
-            if (Math.Abs(coreH - _lastCoreH) > fillH * 0.15 || (_lastCoreH <= 2) != (coreH <= 2))
-                SONO.Core.Diagnostics.Log.Write($"eq: raw={Level:0.000} shaped={level:0.000} coreH={coreH:0} fillH={fillH:0} last={_lastCoreH:0}");
             _lastCoreH = coreH;
             if (coreH > 2)
             {
