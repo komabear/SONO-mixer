@@ -121,7 +121,7 @@ public static class ThemeCatalog
             Chip = "#52585C", Border = "#5D6468", Text = "#BEC8D1", Muted = "#8B979E",
             Accent = "#86CECB", Danger = "#E12885",
             Swatches = ["#86CECB", "#137A7F", "#BEC8D1", "#E12885", "#5B8FA8", "#7DE8DD", "#9FB4BD", "#4FC1E9"],
-            GroupBgs = ["#4FC1E9", "#7DE8DD", "#E12885", "#4A4A4A"],   // Aux: black-based
+            GroupBgs = ["#4FC1E9", "#7DE8DD", "#E12885", "#AED62F"],   // Aux: yellow-green
             LogoUri = "avares://SONO.App/Assets/logo-miku.png",
         },
         new Palette

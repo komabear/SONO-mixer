@@ -50,7 +50,7 @@ public sealed class MainWindow : Window
     {
         _vm = vm;
         Title = "SONO Mixer";
-        MinWidth = 880; MinHeight = 520;
+        MinWidth = 880; MinHeight = 300;
         Width = 980; Height = 800;
         FontFamily = new FontFamily("Segoe UI Variable Display, Segoe UI, Inter");
         RefreshTheme();
