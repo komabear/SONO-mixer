@@ -234,6 +234,10 @@ public sealed class AudioEngine : IDisposable
         try { curVol = asc.SimpleAudioVolume.Volume; curMute = asc.SimpleAudioVolume.Mute; } catch { }
         float peak = 0f;
         try { peak = asc.AudioMeterInformation.MasterPeakValue; } catch { }
+        if (_touched.TryGetValue(key, out var enforcedNow))
+        {
+            if (enforcedNow.Mute) peak = 0f; else peak *= enforcedNow.Vol;
+        }
         _meterSessions[key] = (asc, channelId);
 
         sessions.Add(new SessionView(
@@ -258,6 +262,13 @@ public sealed class AudioEngine : IDisposable
                     if (channelId is null) continue;
                     float peak = 0f;
                     try { peak = asc.AudioMeterInformation.MasterPeakValue; } catch { }
+                    // session meters are PRE-volume: a zeroed/muted channel still reports
+                    // full-scale peaks — zero them so the UI doesn't flash
+                    if (_touched.TryGetValue(key, out var enforced))
+                    {
+                        if (enforced.Mute) peak = 0f;
+                        else peak *= enforced.Vol;
+                    }
                     if (peak > 0f) result[channelId] = Math.Max(peak, result.GetValueOrDefault(channelId));
                 }
             }
