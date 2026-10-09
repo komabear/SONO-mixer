@@ -143,7 +143,7 @@ public sealed class Fader : Panel
         double fillR = Math.Min(17, fillH / 2);
         _fill.CornerRadius = new CornerRadius(fillR);
         _fill.ClipToBounds = true;   // clip the core to the fill's (dynamic) rounding
-        ArrangeChild(_fill, x, h - fillH, trackW, fillH);
+        ArrangeChild(_fill, 0, h - fillH, trackW, fillH);   // coords relative to the TRACK
 
         // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored, height =
         // smoothed live level relative to the volume fill. Reads as the "moving" part of
