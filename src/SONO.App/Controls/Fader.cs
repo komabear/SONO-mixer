@@ -27,7 +27,7 @@ public sealed class Fader : Panel
 
     private Border? _track;
     private Border? _fill;
-    private Border? _glow;
+    private Border? _meter;
     private bool _dragging;
 
     /// <summary>Live output level 0..1 for this channel (engine peak). Drives wave amplitude.</summary>
@@ -71,14 +71,14 @@ public sealed class Fader : Panel
         // square top corners: the wave surface must join the fill flush (a domed top
         // leaves notches at the sides where the wave can't reach)
         _fill = new Border { CornerRadius = new CornerRadius(22), IsHitTestVisible = false };
-        _glow = new Border
+        _meter = new Border
         {
             IsHitTestVisible = false,
-            CornerRadius = new CornerRadius(4),
+            CornerRadius = new CornerRadius(2.5),
         };
         Children.Add(_track);
         Children.Add(_fill);
-        Children.Add(_glow);
+        Children.Add(_meter);
         UpdateColors();
     }
 
@@ -97,16 +97,17 @@ public sealed class Fader : Panel
                     new GradientStop(Color.FromArgb(235, c.R, c.G, c.B), 1),
                 },
             };
-            if (_glow is not null)
-                _glow.Background = new ImmutableSolidColorBrush(Color.FromArgb(
-                    255,
-                    (byte)Math.Min(255, c.R + 70),
-                    (byte)Math.Min(255, c.G + 70),
-                    (byte)Math.Min(255, c.B + 70)));
+            if (_meter is not null)
+                _meter.Background = new ImmutableSolidColorBrush(Color.FromArgb(
+                    235,
+                    (byte)Math.Min(255, c.R + 50),
+                    (byte)Math.Min(255, c.G + 50),
+                    (byte)Math.Min(255, c.B + 50)));
         }
         else
         {
             _fill.Background = Brushes.Gray;
+            if (_meter is not null) _meter.Background = Brushes.Gray;
         }
     }
 
@@ -133,22 +134,22 @@ public sealed class Fader : Panel
         ArrangeChild(_track, x, 0, trackW, h);
         ArrangeChild(_fill, x, h - fillH, trackW, fillH);
 
-        // level glow: a soft light band at the fill's surface, brightness/thickness
-        // following the live output level — the fill looks "hot" where sound comes out
+        // DAW-style level meter: thin strip to the RIGHT of the track, bottom-anchored,
+        // height = live output level (decays naturally since the engine reports raw peaks)
         double level = Math.Clamp(Level, 0, 1);
-        if (_glow is not null)
+        if (_meter is not null)
         {
-            if (level > 0.02 && fillH > 10)
+            const double meterW = 5;
+            double mx = x + trackW + 4;                        // 4px gap right of the track
+            double meterH = level * h;
+            if (level > 0.01)
             {
-                double glowH = 4 + level * 8;                 // 4–12 px tall
-                double surfaceY = h - fillH;
-                ArrangeChild(_glow, x, surfaceY - glowH / 2, trackW, glowH);
-                _glow.IsVisible = true;
-                _glow.Opacity = 0.35 + level * 0.5;           // 35–85%
+                ArrangeChild(_meter, mx, h - meterH, meterW, meterH);
+                _meter.IsVisible = true;
             }
             else
             {
-                _glow.IsVisible = false;
+                _meter.IsVisible = false;
             }
         }
 
