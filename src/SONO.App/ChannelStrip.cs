@@ -80,7 +80,7 @@ public sealed class ChannelStrip : Border
         {
             Minimum = 0,
             Maximum = 100,
-            Width = 34,
+            Width = 46,
             VerticalAlignment = VerticalAlignment.Stretch,
             HorizontalAlignment = HorizontalAlignment.Center,
         };
