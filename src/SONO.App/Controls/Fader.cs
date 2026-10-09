@@ -29,6 +29,7 @@ public sealed class Fader : Panel
     private Border? _fill;
     private Border? _meter;
     private double _smoothed;
+    private double _breath;
     private DispatcherTimer? _fallTimer;
     private bool _dragging;
 
@@ -148,11 +149,16 @@ public sealed class Fader : Panel
         // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored. The displayed
         // height LERPs toward the live level every frame (exponential chase) — soft motion,
         // no snap; rising and falling feel identical.
-        double target = Math.Clamp(Level, 0, 1);
+        // SENSITIVITY: raw peaks pile up near 1.0 on loud audio and the bar stops moving.
+        // A gamma curve expands the upper range so loud music still fluctuates visibly.
+        double raw = Math.Clamp(Level, 0, 1);
+        double target = 1 - Math.Pow(1 - raw, 2);
         const double lerpK = 0.22;          // fraction of the remaining gap closed per frame
         _smoothed += (target - _smoothed) * lerpK;
-        if (Math.Abs(target - _smoothed) < 0.001) _smoothed = target;   // settle exactly
-        double level = _smoothed;
+        // BREATHING: gentle ±2.5% wave on top of the chased value — keeps the bar alive
+        // even on a constant loud signal. Phase advances every frame.
+        _breath += 0.05;
+        double level = Math.Clamp(_smoothed + Math.Sin(_breath) * 0.025, 0.0, 1.0);
 
         if (_meter is not null)
         {
@@ -170,7 +176,8 @@ public sealed class Fader : Panel
                 if (_fallTimer is null)
                 {
                     _fallTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
-                    _fallTimer.Tick += (_, _) => InvalidateArrange();   // continuous lerp is driven here
+                    _breath += 0.06;   // continuous breathing phase — the bar is never static
+                    _fallTimer.Tick += (_, _) => InvalidateArrange();
                     _fallTimer.Start();
                 }
             }
