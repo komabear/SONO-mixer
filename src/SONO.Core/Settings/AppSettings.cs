@@ -93,8 +93,8 @@ public static class SettingsStore
             Channels =
             {
                 Mk("Game", "#7aa2f7"),
-                Mk("Chat", "#9ece6a", exes: "discord.exe"),
-                Mk("Media", "#bb9af7", exes: "spotify.exe"),
+                Mk("Chat", "#9ece6a"),
+                Mk("Media", "#bb9af7"),
                 Mk("Aux", "#e0af68"),
             },
         };
