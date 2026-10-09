@@ -28,6 +28,8 @@ public sealed class Fader : Panel
     private Border? _track;
     private Border? _fill;
     private Border? _meter;
+    private double _lastCoreH;
+    private double _smoothed;
     private bool _dragging;
 
     /// <summary>Live output level 0..1 for this channel (engine peak). Drives wave amplitude.</summary>
@@ -154,18 +156,25 @@ public sealed class Fader : Panel
         _fill.ClipToBounds = true;   // clip the core to the fill's (dynamic) rounding
         ArrangeChild(_fill, 0, h - fillH, trackW, fillH);   // coords relative to the TRACK
 
-        // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored. NO smoothing,
-        // NO lerp, NO timers — the displayed height is the live level (gamma-shaped),
-        // updated the moment the engine pushes it. One code path, zero hidden state.
+        // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored.
         // SENSITIVITY: steep gamma on the RAW level — Windows session peaks for music sit
         // 0.4..1.0, and ^2.5 spreads them across the bar: quiet parts ~0.1, average ~0.4,
         // hits 1.0.
-        double level = Math.Pow(Math.Clamp(Level, 0, 1), 2.5);
+        // RISE CAP: the display can climb at most 0.05/frame (~0.75s from empty to full)
+        // — real music still rises fast (consecutive frames compound), but a single
+        // full-scale blip (system ding, stream start transient) crawls up instead of
+        // flashing to 100%. Falls are instant (natural for audio).
+        double target = Math.Pow(Math.Clamp(Level, 0, 1), 2.5);
+        _smoothed = target < _smoothed ? target : Math.Min(_smoothed + 0.05, target);
+        double level = _smoothed;
 
         if (_meter is not null)
         {
             // whole-pixel height: sub-pixel sizes made the bottom edge wobble ±1px
             double coreH = Math.Floor(Math.Min(fillH, fillH * level));
+            if (_lastCoreH <= 2 && coreH > fillH * 0.5)
+                SONO.Core.Diagnostics.Log.Write($"eq-flash: raw={Level:0.00} shaped={level:0.00} coreH={coreH:0} fillH={fillH:0} lastCoreH={_lastCoreH:0}");
+            _lastCoreH = coreH;
             if (coreH > 2)
             {
                 // same width as the fill — bottom flush, clipped by the same rounding
