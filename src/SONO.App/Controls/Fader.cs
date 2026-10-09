@@ -53,7 +53,7 @@ public sealed class Fader : Panel
 
     static Fader()
     {
-        AffectsArrange<Fader>(ValueProperty, MinimumProperty, MaximumProperty);
+        AffectsArrange<Fader>(ValueProperty, MinimumProperty, MaximumProperty, LevelProperty);
         ValueProperty.Changed.AddClassHandler<Fader>((f, _) => { if (!f._dragging) f.InvalidateArrange(); });
         GroupColorProperty.Changed.AddClassHandler<Fader>((f, _) => f.UpdateColors());
     }
