@@ -146,22 +146,22 @@ public sealed class Fader : Panel
             }
             else
             {
-                double amp = 1.5 + level * 5.5;
+                double amp = 2.0 + Math.Sqrt(level) * 9.0;   // sqrt: quiet audio still visible
                 double surfaceY = h - fillH;
                 var geo = new StreamGeometry();
                 using (var ctx = geo.Open())
                 {
-                    ctx.BeginFigure(new Point(x, surfaceY), true);
-                    int steps = 12;
+                    ctx.BeginFigure(new Point(x, surfaceY - amp), true);
+                    int steps = 14;
                     for (int i = 1; i <= steps; i++)
                     {
                         double t = (double)i / steps;
                         double wx = x + trackW * t;
-                        double wy = surfaceY + Math.Sin(t * Math.PI * 2.2 + _phase) * amp;
+                        double wy = surfaceY - amp + Math.Sin(t * Math.PI * 2.4 + _phase) * amp;
                         ctx.LineTo(new Point(wx, wy));
                     }
-                    ctx.LineTo(new Point(x + trackW, surfaceY + 6));
-                    ctx.LineTo(new Point(x, surfaceY + 6));
+                    ctx.LineTo(new Point(x + trackW, surfaceY + 4));
+                    ctx.LineTo(new Point(x, surfaceY + 4));
                     ctx.EndFigure(true);
                 }
                 _wave.Data = geo;
