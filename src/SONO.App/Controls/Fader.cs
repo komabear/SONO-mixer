@@ -70,7 +70,9 @@ public sealed class Fader : Panel
             Background = new ImmutableSolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
             IsHitTestVisible = false,
         };
-        _fill = new Border { CornerRadius = new CornerRadius(22), IsHitTestVisible = false };
+        // square top corners: the wave surface must join the fill flush (a domed top
+        // leaves notches at the sides where the wave can't reach)
+        _fill = new Border { CornerRadius = new CornerRadius(0, 0, 22, 22), IsHitTestVisible = false };
         _wave = new Avalonia.Controls.Shapes.Path
         {
             IsHitTestVisible = false,
@@ -154,7 +156,9 @@ public sealed class Fader : Panel
             }
             else
             {
-                double amp = 2.0 + Math.Sqrt(level) * 9.0;
+                // wave height follows the channel VOLUME (the slider position itself)
+                double volFrac = Math.Clamp((Value - Minimum) / Math.Max(0.001, Maximum - Minimum), 0, 1);
+                double amp = 2.0 + Math.Sqrt(volFrac) * 10.0;
                 double surfaceY = h - fillH;
                 var geo = new StreamGeometry();
                 using (var ctx = geo.Open())
