@@ -6,14 +6,17 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
-using Avalonia.Threading;
 
 namespace SONO.App.Controls;
 
-/// <summary>Vertical fader (DAW-style): thin rounded track, colored fill from the bottom,
-/// round thumb that ALWAYS stays inside the track (even at 0% and 100%). Pointer drag
-/// with live Value updates; CommitRequested fires on release, LiveRequested while dragging.</summary>
-public sealed class Fader : TemplatedControl
+/// <summary>Vertical fader (DAW-style): rounded track, colored fill from the bottom,
+/// round thumb that ALWAYS stays inside the track (even at 0% and 100%).
+/// Built as a Panel subclass so the layout system measures/arranges the children
+/// natively — the earlier TemplatedControl + manually-attached-Canvas approach had
+/// stale arrange passes (a fader could render taller than its siblings after a click).
+/// Pointer drag with live Value updates; CommitRequested fires on release,
+/// LiveRequested while dragging.</summary>
+public sealed class Fader : Panel
 {
     public static readonly StyledProperty<double> MinimumProperty = AvaloniaProperty.Register<Fader, double>(nameof(Minimum), 0);
     public static readonly StyledProperty<double> MaximumProperty = AvaloniaProperty.Register<Fader, double>(nameof(Maximum), 100);
@@ -21,12 +24,10 @@ public sealed class Fader : TemplatedControl
         nameof(Value), defaultValue: 100, coerce: CoerceValue);
     public static readonly StyledProperty<string?> GroupColorProperty = AvaloniaProperty.Register<Fader, string?>(nameof(GroupColor));
 
-    private Canvas? _canvas;
     private Border? _track;
     private Border? _fill;
     private Border? _thumb;
     private bool _dragging;
-    private bool _suppress;
 
     public event Action? ValueChanged;
     public event Action? CommitRequested;
@@ -46,18 +47,16 @@ public sealed class Fader : TemplatedControl
     static Fader()
     {
         AffectsArrange<Fader>(ValueProperty, MinimumProperty, MaximumProperty);
-        ValueProperty.Changed.AddClassHandler<Fader>((f, _) => f.UpdateThumb());
+        ValueProperty.Changed.AddClassHandler<Fader>((f, _) => { if (!f._dragging) f.InvalidateArrange(); });
         GroupColorProperty.Changed.AddClassHandler<Fader>((f, _) => f.UpdateColors());
     }
 
     public Fader()
     {
-        // transparent background = hit-testable (a TemplatedControl with null background
-        // never receives PointerPressed — the sliders looked "dead")
+        // transparent background = hit-testable (null background never receives PointerPressed)
         Background = Brushes.Transparent;
-        // build visuals in the constructor — a TemplatedControl without a XAML template
-        // never gets OnApplyTemplate, so template-based construction silently draws nothing
-        _canvas = new Canvas { ClipToBounds = true, Background = Brushes.Transparent };
+        ClipToBounds = true;
+
         _track = new Border
         {
             CornerRadius = new CornerRadius(17),
@@ -72,20 +71,12 @@ public sealed class Fader : TemplatedControl
             CornerRadius = new CornerRadius(13),
             BorderThickness = new Thickness(3),
             BoxShadow = new BoxShadows(new BoxShadow { Blur = 6, Color = Color.FromArgb(120, 0, 0, 0), OffsetY = 2 }),
+            IsHitTestVisible = false,
         };
-        _canvas.Children.Add(_track);
-        _canvas.Children.Add(_fill);
-        _canvas.Children.Add(_thumb);
-        VisualChildren.Add(_canvas);
-        LogicalChildren.Add(_canvas);
+        Children.Add(_track);
+        Children.Add(_fill);
+        Children.Add(_thumb);
         UpdateColors();
-    }
-
-    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        base.OnAttachedToVisualTree(e);
-        UpdateColors();
-        PositionThumb();
     }
 
     private void UpdateColors()
@@ -93,20 +84,18 @@ public sealed class Fader : TemplatedControl
         if (_fill is null || _thumb is null) return;
         if (Color.TryParse(GroupColor, out var c))
         {
-            var col = c;
-            // fill: vertical gradient, strong at bottom → lighter at the surface
             _fill.Background = new LinearGradientBrush
             {
                 StartPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
                 EndPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
                 GradientStops =
                 {
-                    new GradientStop(Color.FromArgb(150, col.R, col.G, col.B), 0),
-                    new GradientStop(Color.FromArgb(235, col.R, col.G, col.B), 1),
+                    new GradientStop(Color.FromArgb(150, c.R, c.G, c.B), 0),
+                    new GradientStop(Color.FromArgb(235, c.R, c.G, c.B), 1),
                 },
             };
             _thumb.Background = new ImmutableSolidColorBrush(Color.FromArgb(255, 43, 45, 53));
-            _thumb.BorderBrush = new ImmutableSolidColorBrush(col);
+            _thumb.BorderBrush = new ImmutableSolidColorBrush(c);
         }
         else
         {
@@ -116,47 +105,42 @@ public sealed class Fader : TemplatedControl
         }
     }
 
-    private void UpdateThumb()
+    protected override Size MeasureOverride(Size availableSize)
     {
-        if (_thumb is not null && !_dragging) PositionThumb();
+        // children are positioned manually; they need no intrinsic size
+        foreach (var child in Children) child.Measure(availableSize);
+        return availableSize;
     }
 
     protected override Size ArrangeOverride(Size finalSize)
     {
-        PositionThumb();
-        return base.ArrangeOverride(finalSize);
-    }
+        double h = finalSize.Height;
+        double w = finalSize.Width;
+        if (h < 1 || _track is null || _fill is null || _thumb is null) return finalSize;
 
-    private void PositionThumb()
-    {
-        if (_canvas is null || _track is null || _fill is null || _thumb is null || _canvas.Bounds.Height < 1) return;
-        double h = _canvas.Bounds.Height;
-        double w = _canvas.Bounds.Width;
         double trackW = 34;
-        double x = (w - trackW) / 2;
+        double x = Math.Max(0, (w - trackW) / 2);
 
         double range = Maximum - Minimum;
         double frac = range <= 0 ? 1 : Math.Clamp((Value - Minimum) / range, 0, 1);
         double fillH = frac * h;
 
-        // thumb rides the TOP of the fill (fill grows from bottom); clamp so the round
-        // thumb never leaves the track at 0% or 100%
-        double minCy = 13;              // half thumb height
-        double maxCy = h - 13;
-        double cy = Math.Clamp(h - fillH, minCy, maxCy);
+        // thumb rides the TOP of the fill; clamp so it never leaves the track at 0% / 100%
+        const double halfThumb = 13;
+        double cy = Math.Clamp(h - fillH, halfThumb, h - halfThumb);
 
-        Canvas.SetLeft(_track, x);
-        Canvas.SetTop(_track, 0);
-        _track.Width = trackW;
-        _track.Height = h;
+        ArrangeChild(_track, x, 0, trackW, h);
+        ArrangeChild(_fill, x, h - fillH, trackW, fillH);
+        ArrangeChild(_thumb, (w - _thumb.Width) / 2, cy - halfThumb, _thumb.Width, _thumb.Height);
 
-        Canvas.SetLeft(_fill, x);
-        Canvas.SetTop(_fill, h - fillH);
-        _fill.Width = trackW;
-        _fill.Height = fillH;
+        return finalSize;
+    }
 
-        Canvas.SetLeft(_thumb, (w - _thumb.Width) / 2);
-        Canvas.SetTop(_thumb, cy - 13);
+    private static void ArrangeChild(Control c, double x, double y, double w, double h)
+    {
+        if (w < 0) w = 0;
+        if (h < 0) h = 0;
+        c.Arrange(new Rect(x, y, w, h));
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
@@ -205,13 +189,12 @@ public sealed class Fader : TemplatedControl
 
     private void SetFromPointer(PointerEventArgs e)
     {
-        var p = e.GetPosition(_canvas);
-        double h = _canvas.Bounds.Height;
+        var p = e.GetPosition(this);
+        double h = Bounds.Height;
         if (h < 1) return;
         double frac = Math.Clamp(1 - p.Y / h, 0, 1);
-        _suppress = false;
         Value = Minimum + frac * (Maximum - Minimum);
-        PositionThumb();
+        InvalidateArrange();
         ValueChanged?.Invoke();
         LiveRequested?.Invoke();
     }
