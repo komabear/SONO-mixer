@@ -156,6 +156,8 @@ public sealed class Fader : Panel
         // a same-frame 0-size arrange can render one stale frame before taking effect)
         if (fillH < 1)
         {
+            if (Level > 0.05)
+                SONO.Core.Diagnostics.Log.Write($"eq-debug vol0: level={Level:0.00} smoothed={_smoothed:0.00} h={h:0}");
             _fill.IsVisible = false;
             _meter.IsVisible = false;
             _smoothed = 0;
