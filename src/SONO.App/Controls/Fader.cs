@@ -22,6 +22,7 @@ public sealed class Fader : TemplatedControl
     public static readonly StyledProperty<string?> GroupColorProperty = AvaloniaProperty.Register<Fader, string?>(nameof(GroupColor));
 
     private Canvas? _canvas;
+    private Border? _track;
     private Border? _fill;
     private Border? _thumb;
     private bool _dragging;
@@ -57,7 +58,13 @@ public sealed class Fader : TemplatedControl
         // build visuals in the constructor — a TemplatedControl without a XAML template
         // never gets OnApplyTemplate, so template-based construction silently draws nothing
         _canvas = new Canvas { ClipToBounds = true, Background = Brushes.Transparent };
-        _fill = new Border { CornerRadius = new CornerRadius(9), IsHitTestVisible = false };
+        _track = new Border
+        {
+            CornerRadius = new CornerRadius(17),
+            Background = new ImmutableSolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
+            IsHitTestVisible = false,
+        };
+        _fill = new Border { CornerRadius = new CornerRadius(17), IsHitTestVisible = false };
         _thumb = new Border
         {
             Width = 26,
@@ -66,6 +73,7 @@ public sealed class Fader : TemplatedControl
             BorderThickness = new Thickness(3),
             BoxShadow = new BoxShadows(new BoxShadow { Blur = 6, Color = Color.FromArgb(120, 0, 0, 0), OffsetY = 2 }),
         };
+        _canvas.Children.Add(_track);
         _canvas.Children.Add(_fill);
         _canvas.Children.Add(_thumb);
         VisualChildren.Add(_canvas);
@@ -121,7 +129,7 @@ public sealed class Fader : TemplatedControl
 
     private void PositionThumb()
     {
-        if (_canvas is null || _fill is null || _thumb is null || _canvas.Bounds.Height < 1) return;
+        if (_canvas is null || _track is null || _fill is null || _thumb is null || _canvas.Bounds.Height < 1) return;
         double h = _canvas.Bounds.Height;
         double w = _canvas.Bounds.Width;
         double trackW = 34;
@@ -136,6 +144,11 @@ public sealed class Fader : TemplatedControl
         double minCy = 13;              // half thumb height
         double maxCy = h - 13;
         double cy = Math.Clamp(h - fillH, minCy, maxCy);
+
+        Canvas.SetLeft(_track, x);
+        Canvas.SetTop(_track, 0);
+        _track.Width = trackW;
+        _track.Height = h;
 
         Canvas.SetLeft(_fill, x);
         Canvas.SetTop(_fill, h - fillH);
