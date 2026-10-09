@@ -57,6 +57,7 @@ public sealed class ChannelStrip : Border
             HorizontalAlignment = HorizontalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = 120,
+            Height = 18,
         };
         _pct = new TextBlock { FontSize = 13, FontWeight = FontWeight.SemiBold, HorizontalAlignment = HorizontalAlignment.Center };
         _count = new TextBlock { FontSize = 10.5, TextAlignment = TextAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
@@ -177,6 +178,8 @@ public sealed class ChannelStrip : Border
         Grid.SetRow(mid, 1);
 
         var bottom = new StackPanel { Spacing = 8 };
+        _count.Height = 16;
+        _count.VerticalAlignment = VerticalAlignment.Center;
         bottom.Children.Add(_count);
         bottom.Children.Add(hks);
         Grid.SetRow(bottom, 2);
@@ -195,7 +198,8 @@ public sealed class ChannelStrip : Border
         Grid.SetColumn(box, 1);
         row.Children.Add(lbl);
         row.Children.Add(box);
-        return new Border { CornerRadius = new CornerRadius(7), Padding = new Thickness(6, 2), Child = row };
+        // FIXED height: hotkey text changes must never reflow the strip (which resizes the fader)
+        return new Border { CornerRadius = new CornerRadius(7), Padding = new Thickness(6, 2), Height = 30, Child = row };
     }
 
     // ---------------- drag-drop ----------------
