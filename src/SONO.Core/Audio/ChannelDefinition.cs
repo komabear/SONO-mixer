@@ -21,7 +21,7 @@ public sealed class ChannelDefinition
     public ChannelKind Kind { get; set; } = ChannelKind.Group;
     public string ColorHex { get; set; } = "#7aa2f7";
 
-    /// <summary>Lower-case executable names assigned to this channel ("spotify.exe"). "system" = Windows sounds.</summary>
+    /// <summary>Lower-case executable names assigned to this channel ("spotify"). "system" = Windows sounds.</summary>
     public List<string> Executables { get; set; } = new();
 
     public float Volume { get; set; } = 1f;   // 0..1
