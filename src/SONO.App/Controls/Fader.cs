@@ -136,21 +136,23 @@ public sealed class Fader : Panel
         ArrangeChild(_track, x, 0, trackW, h);
         ArrangeChild(_fill, x, h - fillH, trackW, fillH);
 
-        // DAW-style level meter: thin strip to the RIGHT of the track, bottom-anchored.
-        // Smoothed: fast attack, slow fall (~0.85 retention per 60ms tick) + the wave timer
-        // repurposed as a smooth-animation ticker while the meter is alive.
+        // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored, height =
+        // smoothed live level relative to the volume fill. Reads as the "moving" part of
+        // the liquid inside the static volume pill.
         double target = Math.Clamp(Level, 0, 1);
         if (target >= _smoothed) _smoothed = target;                    // instant attack
         else _smoothed = Math.Max(target, _smoothed * 0.85);            // graceful fall
         double level = _smoothed;
+
         if (_meter is not null)
         {
-            const double meterW = 5;
-            double mx = x + trackW + 4;                        // 4px gap right of the track
-            double meterH = level * h;
-            if (level > 0.004)
+            double coreH = Math.Min(fillH, fillH * level);
+            if (coreH > 3)
             {
-                ArrangeChild(_meter, mx, h - meterH, meterW, meterH);
+                // inset 4px from each side of the fill so it reads as INSIDE the pill
+                double inset = 5;
+                double coreW = trackW - inset * 2;
+                ArrangeChild(_meter, x + inset, h - coreH, coreW, coreH);
                 _meter.IsVisible = true;
                 if (_fallTimer is null)
                 {
