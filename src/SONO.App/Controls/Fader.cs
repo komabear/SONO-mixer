@@ -66,9 +66,9 @@ public sealed class Fader : Panel
         _fill = new Border { CornerRadius = new CornerRadius(22), IsHitTestVisible = false };
         _thumb = new Border
         {
-            Width = 30,
-            Height = 30,
-            CornerRadius = new CornerRadius(15),
+            Width = 34,
+            Height = 34,
+            CornerRadius = new CornerRadius(17),
             BorderThickness = new Thickness(3),
             BoxShadow = new BoxShadows(new BoxShadow { Blur = 6, Color = Color.FromArgb(120, 0, 0, 0), OffsetY = 2 }),
             IsHitTestVisible = false,
@@ -118,7 +118,7 @@ public sealed class Fader : Panel
         double w = finalSize.Width;
         if (h < 1 || _track is null || _fill is null || _thumb is null) return finalSize;
 
-        double trackW = 44;
+        double trackW = 60;
         double x = Math.Max(0, (w - trackW) / 2);
 
         double range = Maximum - Minimum;
@@ -126,7 +126,7 @@ public sealed class Fader : Panel
         double fillH = frac * h;
 
         // thumb rides the TOP of the fill; clamp so it never leaves the track at 0% / 100%
-        const double halfThumb = 15;
+        const double halfThumb = 17;
         double cy = Math.Clamp(h - fillH, halfThumb, h - halfThumb);
 
         ArrangeChild(_track, x, 0, trackW, h);
