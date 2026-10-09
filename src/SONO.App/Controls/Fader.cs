@@ -80,9 +80,9 @@ public sealed class Fader : Panel
             // top stays slightly rounded for a soft surface
             CornerRadius = new CornerRadius(3, 3, 17, 17),
         };
+        _fill.Child = _meter;   // core lives inside the fill: inherits its clip + bottom rounding
         Children.Add(_track);
         Children.Add(_fill);
-        Children.Add(_meter);
         UpdateColors();
     }
 
@@ -136,11 +136,7 @@ public sealed class Fader : Panel
         double fillH = frac * h;
 
         ArrangeChild(_track, x, 0, trackW, h);
-        // fill corners shrink with height: a 22px radius on a 20px-tall low-volume fill
-        // gets clamped by the renderer into a distorted near-square
-        double fillR = Math.Min(22, fillH / 2);
-        _fill.CornerRadius = new CornerRadius(fillR);
-        ArrangeChild(_fill, x, h - fillH, trackW, fillH);
+        ArrangeChild(_fill, x, h - fillH, trackW, fillH);   // track's pill clip rounds it
 
         // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored, height =
         // smoothed live level relative to the volume fill. Reads as the "moving" part of
@@ -159,10 +155,9 @@ public sealed class Fader : Panel
             {
                 double coreW = trackW - inset * 2;
                 // bottom edge pinned: y is derived from the fixed bottom line, never from coreH
-                ArrangeChild(_meter, x + inset, h - inset - coreH, coreW, coreH);
-                // all corners shrink with height: clamped radii distort at ~5% volume
+                ArrangeChild(_meter, inset, fillH - coreH, coreW, coreH);   // core coords relative to the fill
                 double r = Math.Min(17, coreH / 2);
-                _meter.CornerRadius = new CornerRadius(r, r, Math.Min(17, coreH / 2), Math.Min(17, coreH / 2));
+                _meter.CornerRadius = new CornerRadius(r, r, 0, 0);
                 _meter.IsVisible = true;
                 if (_fallTimer is null)
                 {
