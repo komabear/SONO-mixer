@@ -29,7 +29,6 @@ public sealed class Fader : Panel
     private Border? _fill;
     private Border? _meter;
     private double _smoothed;
-    private double _breath;
     private DispatcherTimer? _fallTimer;
     private bool _dragging;
 
@@ -155,29 +154,33 @@ public sealed class Fader : Panel
         double target = 1 - Math.Pow(1 - raw, 2);
         const double lerpK = 0.22;          // fraction of the remaining gap closed per frame
         _smoothed += (target - _smoothed) * lerpK;
-        // BREATHING: gentle ±2.5% wave on top of the chased value — keeps the bar alive
-        // even on a constant loud signal. Phase advances every frame.
-        _breath += 0.05;
-        double level = Math.Clamp(_smoothed + Math.Sin(_breath) * 0.025, 0.0, 1.0);
+        if (Math.Abs(target - _smoothed) < 0.001) _smoothed = target;   // settle exactly
+        double level = _smoothed;
 
         if (_meter is not null)
         {
-            const double inset = 5;          // same border on all four sides
             // whole-pixel height: sub-pixel sizes made the bottom edge wobble ±1px
-            double coreH = Math.Floor(Math.Min(fillH - inset * 2, fillH * level));   // top AND bottom margin
+            double coreH = Math.Floor(Math.Min(fillH, fillH * level));
             if (coreH > 2)
             {
-                double coreW = trackW - inset * 2;
-                // bottom edge pinned: y is derived from the fixed bottom line, never from coreH
-                ArrangeChild(_meter, inset, fillH - inset - coreH, coreW, coreH);   // bottom margin = inset
+                // same width as the fill — bottom flush, clipped by the same rounding
+                ArrangeChild(_meter, 0, fillH - coreH, trackW, coreH);
                 double r = Math.Min(17, coreH / 2);
                 _meter.CornerRadius = new CornerRadius(r, r, r, r);
                 _meter.IsVisible = true;
                 if (_fallTimer is null)
                 {
+                    // chaser only needs to run while catching up to the target
                     _fallTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
-                    _breath += 0.06;   // continuous breathing phase — the bar is never static
-                    _fallTimer.Tick += (_, _) => InvalidateArrange();
+                    _fallTimer.Tick += (_, _) =>
+                    {
+                        // advance the lerp even without new engine ticks, stop when settled
+                        double t = Math.Clamp(Level, 0, 1);
+                        double tgt = 1 - Math.Pow(1 - t, 2);
+                        _smoothed += (tgt - _smoothed) * 0.22;
+                        if (Math.Abs(tgt - _smoothed) < 0.001) { _smoothed = tgt; _fallTimer?.Stop(); _fallTimer = null; }
+                        InvalidateArrange();
+                    };
                     _fallTimer.Start();
                 }
             }
