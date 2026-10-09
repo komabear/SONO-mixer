@@ -29,6 +29,7 @@ public sealed class ChannelStrip : Border
     private readonly ToggleButton _muteBtn;
     private readonly TextBlock _count;
     private readonly HotkeyBox _hkDown, _hkUp, _hkMute;
+    private StackPanel? _hksHost;
     private bool _dragHover;
     private static ChannelStrip? _hovered;  // the one strip currently showing the drag tint
 
@@ -116,6 +117,36 @@ public sealed class ChannelStrip : Border
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DragLeaveEvent, OnDragLeave);
         AddHandler(DragDrop.DropEvent, OnDrop);
+        AttachedToVisualTree += (_, _) => HookWindowBounds();
+    }
+
+    /// <summary>Track the host window's height: below 540px the hotkey slots hide
+    /// (faders + apps panel win the space).</summary>
+    private void HookWindowBounds()
+    {
+        if (VisualRoot is Window win)
+        {
+            win.PropertyChanged -= OnWindowSizeChanged;
+            win.PropertyChanged += OnWindowSizeChanged;
+            ApplyHeightPolicy(win.Bounds.Height);
+        }
+    }
+
+    private void OnWindowSizeChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property.Name == "Bounds" && sender is Window win)
+            ApplyHeightPolicy(win.Bounds.Height);
+    }
+
+    private void ApplyHeightPolicy(double windowHeight)
+    {
+        if (_hksHost is null) return;
+        bool show = windowHeight >= 540;
+        if (_hksHost.IsVisible != show)
+        {
+            _hksHost.IsVisible = show;
+            InvalidateMeasure();
+        }
     }
 
     private HotkeyBox MkHk(HotkeySlot slot)
@@ -154,11 +185,13 @@ public sealed class ChannelStrip : Border
 
     private void Build()
     {
-        // stacked hotkey slots at the bottom: label left, key right (three full-width rows)
+        // stacked hotkey slots at the bottom: label left, key right (three full-width rows).
+        // Hidden entirely when the window is shorter than 540px — space is too tight.
         var hks = new StackPanel { Spacing = 5, VerticalAlignment = VerticalAlignment.Bottom };
         hks.Children.Add(HkRow(_hkDown, "VOL−"));
         hks.Children.Add(HkRow(_hkUp, "VOL+"));
         hks.Children.Add(HkRow(_hkMute, "MUTE"));
+        _hksHost = hks;
 
         // fader grows to fill everything between the header block and the bottom block
         var sp = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(1, GridUnitType.Star), new RowDefinition(GridLength.Auto) }, RowSpacing = 10 };
