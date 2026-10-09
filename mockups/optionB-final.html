@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<!-- v7 water -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SONO — Option B-final: Mixer Strips (apps live in the right panel)</title>
+<style>
+  :root {
+    --bg: #141519;
+    --card: #1c1e23;
+    --elevated: #232530;
+    --text: #e8e9ec;
+    --muted: #8b8e98;
+    --game: #7aa2f7;
+    --chat: #9ece6a;
+    --media: #bb9af7;
+    --aux: #e0af68;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d0e11;
+    font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+    color: var(--text);
+    display: flex;
+    gap: 24px;
+    padding: 32px;
+    align-items: flex-start;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .frame { background: var(--bg); border-radius: 14px; padding: 18px; width: 880px; height: 640px; box-shadow: 0 8px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; }
+  .frame .layout { flex: 1; min-height: 0; }
+  .titlebar { display: flex; align-items: center; justify-content: space-between; padding: 2px 6px 14px; }
+  .titlebar .name { font-size: 12px; color: var(--muted); letter-spacing: .4px; }
+  .winbtns { color: var(--muted); font-size: 11px; }
+
+  .layout { display: grid; grid-template-columns: 1fr 296px; gap: 14px; align-items: stretch; }
+  .strips { height: 100%; grid-template-rows: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+  /* ---- channel strips ---- */
+  .strips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .strip {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 14px 10px 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    height: 100%;
+    transition: background .15s;
+  }
+  .strip.dragover { background: color-mix(in srgb, var(--dc) 14%, var(--card)); }
+  .strip .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .strip .dot.game { background: var(--game); } .strip .dot.chat { background: var(--chat); }
+  .strip .dot.media { background: var(--media); } .strip .dot.aux { background: var(--aux); }
+  .strip .nm { font-size: 13px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .strip .mut {
+    width: 30px; height: 22px; border-radius: 6px; font-size: 10px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; letter-spacing: .5px;
+  }
+  .strip[data-g="game"]  .mut.live { background: color-mix(in srgb, var(--game) 25%, var(--card)); color: var(--game); }
+  .strip[data-g="chat"]  .mut.live { background: color-mix(in srgb, var(--chat) 25%, var(--card)); color: var(--chat); }
+  .strip[data-g="media"] .mut.live { background: color-mix(in srgb, var(--media) 25%, var(--card)); color: var(--media); }
+  .strip[data-g="aux"]   .mut.live { background: color-mix(in srgb, var(--aux) 25%, var(--card)); color: var(--aux); }
+  .strip .mut.dead { background: rgba(255,255,255,.05); color: var(--muted); }
+
+
+  
+  .fader { overflow: hidden; }
+  .fader .ffill { overflow: visible; }
+  .water { z-index: 2; }
+  .water {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; flex-direction: column; align-items: stretch;
+  }
+  .water svg { display: block; width: 200%; animation: slosh 3.2s ease-in-out infinite; }
+  .water svg.w2 { position: absolute; bottom: 0; left: 0; opacity: .5; animation: slosh 4.7s ease-in-out infinite reverse; }
+  @keyframes slosh {
+    0%, 100% { transform: translateX(0); }
+    50%      { transform: translateX(-50%); }
+  }
+  /* intensity classes set wave amplitude via svg height */
+
+  .faderwrap { flex: 1; display: flex; align-items: stretch; padding: 11px 0; width: 34px; }
+  .fader { flex: 1; width: 34px; background: rgba(255,255,255,.04); border-radius: 17px; position: relative; }
+  .fader .ffill { position: absolute; bottom: 0; left: 0; right: 0; border-radius: 17px; }
+  .strip[data-g="game"]  .ffill { height: 87%; background: linear-gradient(to top, color-mix(in srgb, var(--game) 55%, transparent), var(--game)); }
+  .strip[data-g="chat"]  .ffill { height: 77%; background: linear-gradient(to top, color-mix(in srgb, var(--chat) 55%, transparent), var(--chat)); }
+  .strip[data-g="media"] .ffill { height: 90%; background: linear-gradient(to top, color-mix(in srgb, var(--media) 55%, transparent), var(--media)); }
+  .strip[data-g="aux"]   .ffill { height: 100%; background: linear-gradient(to top, color-mix(in srgb, var(--aux) 55%, transparent), var(--aux)); }
+  .fader .cap {
+    position: absolute; left: 50%; transform: translate(-50%, 50%);
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #2b2d35; border: 2px solid var(--muted);
+    box-shadow: 0 2px 6px rgba(0,0,0,.5);
+  }
+  .strip[data-g="game"]  .cap { border-color: var(--game); }
+  .strip[data-g="chat"]  .cap { border-color: var(--chat); }
+  .strip[data-g="media"] .cap { border-color: var(--media); }
+  .strip[data-g="aux"]   .cap { border-color: var(--aux); }
+  /* keep cap vertically clamped inside the track at extremes */
+  .fader { overflow: visible; }
+  .fader .ffill { border-radius: 17px; }
+  .strip[data-g="game"]  .cap { bottom: 87%; }
+  .strip[data-g="chat"]  .cap { bottom: 77%; }
+  .strip[data-g="media"] .cap { bottom: 90%; }
+  .strip[data-g="aux"]   .cap { bottom: 100%; }
+  .strip .pct { font-size: 13px; font-weight: 600; }
+
+  /* count of apps in this group */
+  .strip .count { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+  .hks { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+  .hks .slot {
+    flex: 1; min-height: 24px; border-radius: 7px;
+    background: rgba(255,255,255,.05);
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    cursor: pointer; padding: 2px 8px;
+  }
+  .hks .slot .k { font-size: 10px; font-weight: 600; color: var(--text); }
+  .hks .slot .lbl { font-size: 8.5px; letter-spacing: .8px; color: var(--muted); width: 30px; text-align: left; }
+  .hks .slot:hover { background: rgba(255,255,255,.09); }
+  .hks .slot .k { font-size: 9.5px; font-weight: 600; color: var(--text); }
+  .hks .slot .lbl { font-size: 8px; letter-spacing: .6px; color: var(--muted); }
+  .hks .slot.empty .k { color: var(--muted); font-weight: 400; font-style: italic; }
+
+  /* ---- right column ---- */
+  .right { display: flex; flex-direction: column; gap: 12px; }
+  .topbar { display: flex; gap: 8px; }
+  .outpicker {
+    flex: 1; background: var(--card); border-radius: 10px;
+    padding: 9px 12px; display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; color: var(--muted);
+  }
+  .outpicker b { color: var(--text); font-weight: 500; }
+  .gearbtn { width: 36px; background: var(--card); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+
+  .apppanel { background: var(--card); border-radius: 12px; padding: 13px; flex: 1; display: flex; flex-direction: column; }
+  .apppanel .rows { flex: 1; overflow-y: auto; min-height: 0; padding-right: 4px; }
+  .apppanel .rows::-webkit-scrollbar { width: 8px; }
+  .apppanel .rows::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 4px; }
+  .apppanel .rows::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.22); }
+  .apppanel .rows::-webkit-scrollbar-track { background: transparent; }
+  .apppanel .hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .apppanel .hdr .t { font-size: 11px; letter-spacing: 1px; color: var(--muted); font-weight: 600; }
+  .addbtn { width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,.08); display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .hint { font-size: 10.5px; color: var(--muted); font-style: italic; margin-bottom: 10px; }
+  .approw { padding: 9px 10px; border-radius: 9px; margin-bottom: 6px; cursor: grab; }
+  .approw .r1 { display: flex; align-items: center; gap: 8px; }
+  .approw .nm { font-size: 12.5px; font-weight: 500; flex: 1; }
+  .approw .grp { font-size: 10px; font-weight: 700; letter-spacing: .6px; }
+  .approw .meter { height: 4px; border-radius: 2px; background: rgba(255,255,255,.07); margin-top: 7px; position: relative; overflow: hidden; }
+  .approw .meter i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; }
+  .approw .drag { color: var(--muted); font-size: 11px; letter-spacing: 2px; }
+  .approw.ungrouped { background: var(--elevated); }
+  .approw.ungrouped .nm { color: var(--muted); }
+  .approw.ungrouped .meter i { background: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="titlebar">
+      <span class="name">SONO MIXER — OPTION B · FINAL (apps only in right panel)</span>
+      <span class="winbtns">— &nbsp;▢ &nbsp;✕</span>
+    </div>
+    <div class="layout">
+      <div class="strips">
+        <div class="strip" data-g="game">
+          <span class="dot game"></span>
+          <span class="nm">Game</span>
+          <span class="mut live">M</span>
+          <div class="faderwrap"><div class="fader" style="height:auto"><div class="ffill">
+          <div class="water" data-g="game">
+            <svg class="w1" viewBox="0 0 120 14" preserveAspectRatio="none" style="height:9px">
+              <path d="M0 7 Q 15 4.2 30 7 T 60 7 T 90 7 T 120 7 V14 H0 Z" fill="var(--game)" opacity="0.95"/>
+            </svg>
+            <svg class="w2" viewBox="0 0 120 10" preserveAspectRatio="none" style="height:8px">
+              <path d="M0 5 Q 15 3.0 30 5 T 60 5 T 90 5 T 120 5 V10 H0 Z" fill="#ffffff" opacity="0.35"/>
+            </svg>
+          </div></div><div class="cap"></div></div></div>
+          <span class="pct">87%</span>
+          <span class="count">2 apps</span>
+          <div class="hks">
+            <div class="slot"><span class="lbl">VOL−</span><span class="k">Ctrl+Alt+1</span></div>
+            <div class="slot"><span class="lbl">VOL+</span><span class="k">Ctrl+Alt+2</span></div>
+            <div class="slot empty"><span class="lbl">MUTE</span><span class="k">none</span></div>
+          </div>
+        </div>
+        <div class="strip" data-g="chat">
+          <span class="dot chat"></span>
+          <span class="nm">Chat</span>
+          <span class="mut live">M</span>
+          <div class="faderwrap"><div class="fader" style="height:auto"><div class="ffill">
+          <div class="water" data-g="chat">
+            <svg class="w1" viewBox="0 0 120 14" preserveAspectRatio="none" style="height:12px">
+              <path d="M0 7 Q 15 2.8000000000000007 30 7 T 60 7 T 90 7 T 120 7 V14 H0 Z" fill="var(--chat)" opacity="0.95"/>
+            </svg>
+            <svg class="w2" viewBox="0 0 120 10" preserveAspectRatio="none" style="height:9px">
+              <path d="M0 5 Q 15 2.0 30 5 T 60 5 T 90 5 T 120 5 V10 H0 Z" fill="#ffffff" opacity="0.35"/>
+            </svg>
+          </div></div><div class="cap"></div></div></div>
+          <span class="pct">77%</span>
+          <span class="count">1 app</span>
+          <div class="hks">
+            <div class="slot empty"><span class="lbl">VOL−</span><span class="k">none</span></div>
+            <div class="slot empty"><span class="lbl">VOL+</span><span class="k">none</span></div>
+            <div class="slot"><span class="lbl">MUTE</span><span class="k">Alt+0</span></div>
+          </div>
+        </div>
+        <div class="strip" data-g="media">
+          <span class="dot media"></span>
+          <span class="nm">Media</span>
+          <span class="mut live">M</span>
+          <div class="faderwrap"><div class="fader" style="height:auto"><div class="ffill">
+          <div class="water" data-g="media">
+            <svg class="w1" viewBox="0 0 120 14" preserveAspectRatio="none" style="height:8px">
+              <path d="M0 7 Q 15 4.9 30 7 T 60 7 T 90 7 T 120 7 V14 H0 Z" fill="var(--media)" opacity="0.95"/>
+            </svg>
+            <svg class="w2" viewBox="0 0 120 10" preserveAspectRatio="none" style="height:8px">
+              <path d="M0 5 Q 15 3.5 30 5 T 60 5 T 90 5 T 120 5 V10 H0 Z" fill="#ffffff" opacity="0.35"/>
+            </svg>
+          </div></div><div class="cap"></div></div></div>
+          <span class="pct">90%</span>
+          <span class="count">2 apps</span>
+          <div class="hks">
+            <div class="slot"><span class="lbl">VOL−</span><span class="k">Alt+7</span></div>
+            <div class="slot"><span class="lbl">VOL+</span><span class="k">Alt+8</span></div>
+            <div class="slot empty"><span class="lbl">MUTE</span><span class="k">none</span></div>
+          </div>
+        </div>
+        <div class="strip" data-g="aux">
+          <span class="dot aux"></span>
+          <span class="nm">Aux</span>
+          <span class="mut dead">M</span>
+          <div class="faderwrap"><div class="fader" style="height:auto"><div class="ffill">
+          <div class="water" data-g="aux">
+            <svg class="w1" viewBox="0 0 120 14" preserveAspectRatio="none" style="height:6px">
+              <path d="M0 7 Q 15 5.6 30 7 T 60 7 T 90 7 T 120 7 V14 H0 Z" fill="var(--aux)" opacity="0.95"/>
+            </svg>
+            <svg class="w2" viewBox="0 0 120 10" preserveAspectRatio="none" style="height:8px">
+              <path d="M0 5 Q 15 4.0 30 5 T 60 5 T 90 5 T 120 5 V10 H0 Z" fill="#ffffff" opacity="0.35"/>
+            </svg>
+          </div></div><div class="cap"></div></div></div>
+          <span class="pct">100%</span>
+          <span class="count">0 apps</span>
+          <div class="hks">
+            <div class="slot empty"><span class="lbl">VOL−</span><span class="k">none</span></div>
+            <div class="slot empty"><span class="lbl">VOL+</span><span class="k">none</span></div>
+            <div class="slot empty"><span class="lbl">MUTE</span><span class="k">none</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="topbar">
+          <div class="outpicker"><span>OUTPUT</span><b>Fones de ouvido ⌄</b></div>
+          <div class="gearbtn">⚙</div>
+        </div>
+        <div class="apppanel">
+          <div class="hdr"><span class="t">APPLICATIONS</span><span class="addbtn">+</span></div>
+          <div class="hint">drag a row onto a strip to group it</div>
+          <div class="rows">
+          <div class="approw" style="background:color-mix(in srgb, var(--game) 12%, var(--card))">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Hermes</span><span class="grp" style="color:var(--game)">GAME</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:87%;background:var(--game)"></i></div>
+          </div>
+          <div class="approw" style="background:color-mix(in srgb, var(--game) 12%, var(--card))">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">VALORANT</span><span class="grp" style="color:var(--game)">GAME</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:67%;background:var(--game)"></i></div>
+          </div>
+          <div class="approw" style="background:color-mix(in srgb, var(--chat) 12%, var(--card))">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Discord</span><span class="grp" style="color:var(--chat)">CHAT</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:77%;background:var(--chat)"></i></div>
+          </div>
+          <div class="approw" style="background:color-mix(in srgb, var(--media) 12%, var(--card))">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Chrome</span><span class="grp" style="color:var(--media)">MEDIA</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:90%;background:var(--media)"></i></div>
+          </div>
+          <div class="approw ungrouped">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Chromium</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:100%"></i></div>
+          </div>
+          <div class="approw ungrouped">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">ShareX</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+          <div class="approw ungrouped">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Spotify</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+          <div class="approw ungrouped">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Firefox</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+          <div class="approw ungrouped">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Steam</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+          <div class="approw ungrouped">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Edge</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+          <div class="approw ungrouped">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">VS Code</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+          <div class="approw ungrouped">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">OBS</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+          <div class="approw ungrouped">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Telegram</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+          <div class="approw ungrouped">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Spotify (2)</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+          <div class="approw ungrouped">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Audacity</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -22,7 +22,7 @@ public sealed class MainWindow : Window
     private readonly TextBlock _status = new();
     private readonly ComboBox _outputBox = new() { MinWidth = 210, HorizontalAlignment = HorizontalAlignment.Right };
     private readonly StackPanel _appsHost = new() { Spacing = 8 };
-    private readonly Dictionary<string, ChannelCard> _cards = new();
+    private readonly Dictionary<string, ChannelStrip> _cards = new();
     private readonly Dictionary<AppRowVm, Border> _appRows = new();
     private OsdWindow? _osd;
     private TrayIcon? _tray;
@@ -45,7 +45,6 @@ public sealed class MainWindow : Window
     private bool _outputBoxGuard;
     private Button? _gearBtn;
     private Border? _controlBox;
-    private Border? _logoBox;
 
     public MainWindow(MixerVm vm)
     {
@@ -62,11 +61,11 @@ public sealed class MainWindow : Window
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14, GridUnitType.Pixel) });   // gutter
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300, GridUnitType.Pixel) });
 
-        var leftCard = new Border { Classes = { "card" }, Child = BuildChannelGrid() };
-        Grid.SetColumn(leftCard, 0);
+        var strips = BuildChannelGrid();
+        Grid.SetColumn(strips, 0);
         var rightColumn = BuildAppsPanel();
         Grid.SetColumn(rightColumn, 2);
-        body.Children.Add(leftCard);
+        body.Children.Add(strips);
         body.Children.Add(rightColumn);
 
         // ---------- status: folded into the header tooltip area (no bottom bar) ----------
@@ -144,21 +143,8 @@ public sealed class MainWindow : Window
         foreach (var card in _cards.Values) card.RefreshTheme();
         SyncAppRows();
         if (_controlBox is not null) _controlBox.Background = Res("SonoElevatedBrush");
-        if (_logoBox is not null) _logoBox.Background = Res("SonoElevatedBrush");
-        // refresh ONLY the tagged logo images (never other Images: mute/app-row/button icons)
-        foreach (var img in this.GetVisualDescendants().OfType<Image>().Where(i => (i.Tag as string) == "sonoLogo"))
-            UpdateLogo(img);
     }
 
-    private static void UpdateLogo(Image img)
-    {
-        try
-        {
-            var uri = Themes.ThemeManager.Current.LogoUri;
-            img.Source = new Bitmap(Avalonia.Platform.AssetLoader.Open(new Uri(uri)));
-        }
-        catch (Exception ex) { SONO.Core.Diagnostics.Log.Write($"logo load: {ex.Message}"); }
-    }
 
     // ---------------- OSD ----------------
 
@@ -187,20 +173,18 @@ public sealed class MainWindow : Window
 
     private Control BuildChannelGrid()
     {
-        var grid = new Grid();
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        // four equal-width vertical strips, all stretching to the full body height
+        var grid = new Grid { VerticalAlignment = VerticalAlignment.Stretch };
+        for (int i = 0; i < 4; i++)
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         for (int i = 0; i < _vm.Channels.Count && i < 4; i++)
         {
-            var card = new ChannelCard(_vm, _vm.Channels[i]);
-            _cards[_vm.Channels[i].Id] = card;
-            Grid.SetRow(card, i / 2);
-            Grid.SetColumn(card, i % 2);
-            grid.Children.Add(card);
+            var strip = new ChannelStrip(_vm, _vm.Channels[i]) { Margin = new Thickness(i == 0 ? 0 : 5, 0, 0, 0) };
+            _cards[_vm.Channels[i].Id] = strip;
+            Grid.SetColumn(strip, i);
+            grid.Children.Add(strip);
         }
-        return new ScrollViewer { Content = grid };
+        return grid;
     }
 
     // ---------------- applications panel ----------------
@@ -265,33 +249,20 @@ public sealed class MainWindow : Window
         var head = new StackPanel { Margin = new Thickness(2, 2, 0, 10) };
         head.Children.Add(titleRow);
 
-        // bottom of the panel: own box with just the logo (fills the box)
-        var logo = new Image { MaxHeight = 110, HorizontalAlignment = HorizontalAlignment.Stretch, Tag = "sonoLogo", Stretch = Avalonia.Media.Stretch.Uniform };
-        UpdateLogo(logo);
-        _logoBox = new Border
-        {
-            Classes = { "card" },
-            Padding = new Thickness(8),
-            Background = MainWindow.Res("SonoElevatedBrush"),
-            Child = logo,
-        };
-
         var appsCard = new Border
         {
             Classes = { "card" },
-            Margin = new Thickness(0, 10, 0, 10),
-            Child = new DockPanel { LastChildFill = true, Children = { head, new ScrollViewer { Content = _appsHost } } },
+            Margin = new Thickness(0, 10, 0, 0),
+            Child = new DockPanel { LastChildFill = true, Children = { head, new ScrollViewer { Content = _appsHost, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto } } },
         };
         DockPanel.SetDock(head, Dock.Top);   // title row spans the top — rows get full width
-        var panelGrid = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(1, GridUnitType.Star), new RowDefinition(GridLength.Auto) } };
+        var panelGrid = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(1, GridUnitType.Star) }, VerticalAlignment = VerticalAlignment.Stretch };
         Grid.SetRow(_controlBox, 0);
         Grid.SetRow(appsCard, 1);
-        Grid.SetRow(_logoBox, 2);
         panelGrid.Children.Add(_controlBox);
         panelGrid.Children.Add(appsCard);
-        panelGrid.Children.Add(_logoBox);
 
-        return panelGrid;   // three stacked boxes: controlBox / applications card / logoBox
+        return panelGrid;   // two stacked boxes: controlBox / applications card (fills remaining height)
     }
 
     private readonly HashSet<AppRowVm> _updateQueued = new();
@@ -521,7 +492,7 @@ public sealed class MainWindow : Window
 
     private void GhostHide()
     {
-        ChannelCard.ClearDragHover();   // drag over: no card may stay lit
+        ChannelStrip.ClearDragHover();   // drag over: no strip may stay lit
         _ghostOn = false;
         _ghostTimer?.Stop();
         _ghost.IsVisible = false;
