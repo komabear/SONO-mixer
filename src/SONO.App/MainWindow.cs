@@ -130,7 +130,9 @@ public sealed class MainWindow : Window
             {
                 _vm.RefreshOutputs();
                 Dispatcher.UIThread.Post(SyncOutputBox);
-                _vm.RebindHotkeys();
+                // RebindHotkeys MUST run on the UI thread: RegisterHotKey cannot target a
+                // window created by another thread (error 1408 = ERROR_WINDOW_OF_OTHER_THREAD)
+                Dispatcher.UIThread.Post(() => _vm.RebindHotkeys());
                 Dispatcher.UIThread.Post(InitializeTray);
             }
             catch (Exception ex) { SONO.Core.Diagnostics.Log.Write($"startup: {ex}"); }
