@@ -154,10 +154,10 @@ public sealed class Fader : Panel
         // ALWAYS uses the full range relative to recent loudness, so changes stay visible
         // at any volume. Gamma on top for extra spread.
         double raw = Math.Clamp(Level, 0, 1);
-        _recentMax = Math.Max(raw, _recentMax * 0.9985);   // ~2s decay at 33ms frames
-        if (_recentMax < 0.1) _recentMax = 0.1;            // floor: silence stays calm
+        _recentMax = Math.Max(raw, _recentMax * 0.97);     // fast ~300ms adaptation
+        if (_recentMax < 0.25) _recentMax = 0.25;          // floor: silence stays calm
         double normalized = raw / _recentMax;
-        double target = 1 - Math.Pow(1 - Math.Clamp(normalized, 0, 1), 2);
+        double target = 1 - Math.Pow(1 - Math.Clamp(normalized, 0, 1), 3);
         const double lerpK = 0.22;          // fraction of the remaining gap closed per frame
         _smoothed += (target - _smoothed) * lerpK;
         if (Math.Abs(target - _smoothed) < 0.001) _smoothed = target;   // settle exactly
