@@ -70,6 +70,7 @@ public sealed class ChannelStrip : Border
             Height = 22,
             Padding = new Thickness(0),
             Content = new TextBlock { Text = "M", FontSize = 10, FontWeight = FontWeight.Bold },
+            HorizontalAlignment = HorizontalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
         };
