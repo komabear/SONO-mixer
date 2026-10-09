@@ -615,12 +615,16 @@ public sealed class MainWindow : Window
 
     private void ShowFromTray()
     {
-        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        if (!IsVisible) Show();
+        WindowState = WindowState.Normal;   // covers minimized AND hidden states
+        Show();
         var wa = Screens.Primary?.WorkingArea ?? new PixelRect(0, 0, 1920, 1080);
         if (Position.X < wa.X - Width || Position.Y < wa.Y - Height || Position.X > wa.Right || Position.Y > wa.Bottom)
             Position = new PixelPoint(wa.X + 40, wa.Y + 40);
+        // Activate alone can lose the foreground race right after Show(); blip topmost
+        // so the window provably comes to the front, then drop the flag
+        Topmost = true;
         Activate();
+        Topmost = false;
     }
 
     private void OnClosing(object? sender, WindowClosingEventArgs e)
