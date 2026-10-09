@@ -101,6 +101,17 @@ public sealed class Fader : Panel
                     new GradientStop(Color.FromArgb(235, c.R, c.G, c.B), 1),
                 },
             };
+            // wave surface: translucent body + lightened crest, both in the group color
+            if (_wave is not null)
+            {
+                _wave.Fill = new ImmutableSolidColorBrush(Color.FromArgb(130, c.R, c.G, c.B));
+                _wave.Stroke = new ImmutableSolidColorBrush(Color.FromArgb(
+                    230,
+                    (byte)Math.Min(255, c.R + 60),
+                    (byte)Math.Min(255, c.G + 60),
+                    (byte)Math.Min(255, c.B + 60)));
+                _wave.StrokeThickness = 1.5;
+            }
         }
         else
         {
@@ -134,7 +145,7 @@ public sealed class Fader : Panel
         // water surface: sine wave across the fill's top edge; amplitude scales with Level,
         // phase animates so it sloshes. Skipped entirely when idle (no timer, no cost).
         double level = Math.Clamp(Level, 0, 1);
-        bool timerShouldRun = level > 0.02 && fillH > 20 && _track is not null;
+        bool timerShouldRun = fillH > 20 && _track is not null;   // DEBUG: always draw
         if (timerShouldRun && _waveTimer is not null && !_waveTimer.IsEnabled) _waveTimer.Start();
         if (!timerShouldRun && _waveTimer is not null && _waveTimer.IsEnabled) _waveTimer.Stop();
 
@@ -146,7 +157,7 @@ public sealed class Fader : Panel
             }
             else
             {
-                double amp = 2.0 + Math.Sqrt(level) * 9.0;   // sqrt: quiet audio still visible
+                double amp = 2.0 + Math.Sqrt(Math.Max(level, 0.15)) * 9.0;   // DEBUG: min visible
                 double surfaceY = h - fillH;
                 var geo = new StreamGeometry();
                 using (var ctx = geo.Open())
