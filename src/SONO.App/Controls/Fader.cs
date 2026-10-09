@@ -28,6 +28,8 @@ public sealed class Fader : Panel
     private Border? _track;
     private Border? _fill;
     private Border? _meter;
+    private double _smoothed;
+    private DispatcherTimer? _fallTimer;
     private bool _dragging;
 
     /// <summary>Live output level 0..1 for this channel (engine peak). Drives wave amplitude.</summary>
@@ -134,18 +136,28 @@ public sealed class Fader : Panel
         ArrangeChild(_track, x, 0, trackW, h);
         ArrangeChild(_fill, x, h - fillH, trackW, fillH);
 
-        // DAW-style level meter: thin strip to the RIGHT of the track, bottom-anchored,
-        // height = live output level (decays naturally since the engine reports raw peaks)
-        double level = Math.Clamp(Level, 0, 1);
+        // DAW-style level meter: thin strip to the RIGHT of the track, bottom-anchored.
+        // Smoothed: fast attack, slow fall (~0.85 retention per 60ms tick) + the wave timer
+        // repurposed as a smooth-animation ticker while the meter is alive.
+        double target = Math.Clamp(Level, 0, 1);
+        if (target >= _smoothed) _smoothed = target;                    // instant attack
+        else _smoothed = Math.Max(target, _smoothed * 0.85);            // graceful fall
+        double level = _smoothed;
         if (_meter is not null)
         {
             const double meterW = 5;
             double mx = x + trackW + 4;                        // 4px gap right of the track
             double meterH = level * h;
-            if (level > 0.01)
+            if (level > 0.004)
             {
                 ArrangeChild(_meter, mx, h - meterH, meterW, meterH);
                 _meter.IsVisible = true;
+                if (_fallTimer is null)
+                {
+                    _fallTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
+                    _fallTimer.Tick += (_, _) => { if (_smoothed > 0.004) { _smoothed *= 0.88; InvalidateArrange(); } else { _fallTimer?.Stop(); _fallTimer = null; } };
+                    _fallTimer.Start();
+                }
             }
             else
             {
