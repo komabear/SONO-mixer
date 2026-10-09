@@ -144,13 +144,12 @@ public sealed class Fader : Panel
         // a same-frame 0-size arrange can render one stale frame before taking effect)
         if (fillH < 1)
         {
-            if (Level > 0.05)
-                SONO.Core.Diagnostics.Log.Write($"eq-debug vol0: level={Level:0.00} h={h:0}");
-            _fill.IsVisible = false;
-            _meter.IsVisible = false;
+            // arrange to EMPTY rects (never IsVisible=false: a freshly-visible control
+            // renders once with its stale last-arranged size — the "100% flash")
+            ArrangeChild(_fill, 0, h, trackW, 0);
+            ArrangeChild(_meter, 0, 0, 0, 0);
             return finalSize;
         }
-        _fill.IsVisible = true;
         double fillR = Math.Min(17, fillH / 2);
         _fill.CornerRadius = new CornerRadius(fillR);
         _fill.ClipToBounds = true;   // clip the core to the fill's (dynamic) rounding
@@ -172,8 +171,8 @@ public sealed class Fader : Panel
         {
             // whole-pixel height: sub-pixel sizes made the bottom edge wobble ±1px
             double coreH = Math.Floor(Math.Min(fillH, fillH * level));
-            if (_lastCoreH <= 2 && coreH > fillH * 0.5)
-                SONO.Core.Diagnostics.Log.Write($"eq-flash: raw={Level:0.00} shaped={level:0.00} coreH={coreH:0} fillH={fillH:0} lastCoreH={_lastCoreH:0}");
+            if (Math.Abs(coreH - _lastCoreH) > fillH * 0.15 || (_lastCoreH <= 2) != (coreH <= 2))
+                SONO.Core.Diagnostics.Log.Write($"eq: raw={Level:0.000} shaped={level:0.000} coreH={coreH:0} fillH={fillH:0} last={_lastCoreH:0}");
             _lastCoreH = coreH;
             if (coreH > 2)
             {
@@ -185,8 +184,7 @@ public sealed class Fader : Panel
             }
             else
             {
-                _meter.IsVisible = false;
-                _meter.CornerRadius = new CornerRadius(17, 17, 17, 17);
+                ArrangeChild(_meter, 0, 0, 0, 0);   // empty rect: renders nothing, no stale size
             }
         }
 
