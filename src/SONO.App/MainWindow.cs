@@ -9,6 +9,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
 using Avalonia.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 using Avalonia.VisualTree;
 using SONO.App.ViewModels;
 
@@ -114,6 +115,7 @@ public sealed class MainWindow : Window
                 GC.Collect(2, GCCollectionMode.Aggressive, true, true);
                 GC.WaitForPendingFinalizers();
                 _ = GC.TryStartNoGCRegion(64 * 1024 * 1024, true);
+                EmptyWorkingSet(Process.GetCurrentProcess().Handle);   // return pages to the OS
             }
             catch (Exception ex) { Log.Write("trim: " + ex.Message); }
         };
@@ -531,6 +533,9 @@ public sealed class MainWindow : Window
     private struct Win32Point { public int X, Y; }
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool GetCursorPos(ref Win32Point pt);
+
+    [System.Runtime.InteropServices.DllImport("psapi.dll")]
+    private static extern bool EmptyWorkingSet(nint hProcess);
 
     // ---------------- output picker ----------------
 
