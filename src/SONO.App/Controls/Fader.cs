@@ -51,16 +51,19 @@ public sealed class Fader : TemplatedControl
 
     public Fader()
     {
+        // transparent background = hit-testable (a TemplatedControl with null background
+        // never receives PointerPressed — the sliders looked "dead")
+        Background = Brushes.Transparent;
         // build visuals in the constructor — a TemplatedControl without a XAML template
         // never gets OnApplyTemplate, so template-based construction silently draws nothing
-        _canvas = new Canvas { ClipToBounds = true };
+        _canvas = new Canvas { ClipToBounds = true, Background = Brushes.Transparent };
         _fill = new Border { CornerRadius = new CornerRadius(9), IsHitTestVisible = false };
         _thumb = new Border
         {
-            Width = 22,
-            Height = 22,
-            CornerRadius = new CornerRadius(11),
-            BorderThickness = new Thickness(2.5),
+            Width = 26,
+            Height = 26,
+            CornerRadius = new CornerRadius(13),
+            BorderThickness = new Thickness(3),
             BoxShadow = new BoxShadows(new BoxShadow { Blur = 6, Color = Color.FromArgb(120, 0, 0, 0), OffsetY = 2 }),
         };
         _canvas.Children.Add(_fill);
@@ -121,7 +124,7 @@ public sealed class Fader : TemplatedControl
         if (_canvas is null || _fill is null || _thumb is null || _canvas.Bounds.Height < 1) return;
         double h = _canvas.Bounds.Height;
         double w = _canvas.Bounds.Width;
-        double trackW = 18;
+        double trackW = 34;
         double x = (w - trackW) / 2;
 
         double range = Maximum - Minimum;
@@ -130,8 +133,8 @@ public sealed class Fader : TemplatedControl
 
         // thumb rides the TOP of the fill (fill grows from bottom); clamp so the round
         // thumb never leaves the track at 0% or 100%
-        double minCy = 11;              // half thumb height
-        double maxCy = h - 11;
+        double minCy = 13;              // half thumb height
+        double maxCy = h - 13;
         double cy = Math.Clamp(h - fillH, minCy, maxCy);
 
         Canvas.SetLeft(_fill, x);
@@ -140,7 +143,7 @@ public sealed class Fader : TemplatedControl
         _fill.Height = fillH;
 
         Canvas.SetLeft(_thumb, (w - _thumb.Width) / 2);
-        Canvas.SetTop(_thumb, cy - 11);
+        Canvas.SetTop(_thumb, cy - 13);
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
