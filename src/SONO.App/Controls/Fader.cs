@@ -159,12 +159,12 @@ public sealed class Fader : Panel
         // SENSITIVITY: steep gamma on the RAW level — Windows session peaks for music sit
         // 0.4..1.0, and ^2.5 spreads them across the bar: quiet parts ~0.1, average ~0.4,
         // hits 1.0.
-        // RISE CAP: the display can climb at most 0.05/frame (~0.75s from empty to full)
-        // — real music still rises fast (consecutive frames compound), but a single
-        // full-scale blip (system ding, stream start transient) crawls up instead of
-        // flashing to 100%. Falls are instant (natural for audio).
+        // LERP: exponential chase toward the live level (25% of the remaining gap per
+        // frame) — soft motion, no snap, symmetric rise/fall. Safe now that the
+        // stale-size flash is fixed at the root (empty-rect hiding).
         double target = Math.Pow(Math.Clamp(Level, 0, 1), 2.5);
-        _smoothed = target < _smoothed ? target : Math.Min(_smoothed + 0.05, target);
+        _smoothed += (target - _smoothed) * 0.25;
+        if (Math.Abs(target - _smoothed) < 0.001) _smoothed = target;   // settle exactly
         double level = _smoothed;
 
         if (_meter is not null)
