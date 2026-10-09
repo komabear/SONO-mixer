@@ -76,7 +76,9 @@ public sealed class Fader : Panel
         _meter = new Border
         {
             IsHitTestVisible = false,
-            CornerRadius = new CornerRadius(2.5),
+            // bottom corners follow the fill's inner curve (22px pill − 5px inset);
+            // top stays slightly rounded for a soft surface
+            CornerRadius = new CornerRadius(3, 3, 17, 17),
         };
         Children.Add(_track);
         Children.Add(_fill);
