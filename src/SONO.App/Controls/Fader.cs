@@ -159,17 +159,18 @@ public sealed class Fader : Panel
                 var geo = new StreamGeometry();
                 using (var ctx = geo.Open())
                 {
-                    ctx.BeginFigure(new Point(x, surfaceY - amp), true);
+                    // crest band ABOVE the fill's top edge: the liquid bulges up past the
+                    // flat fill line — visible against the track background
+                    ctx.BeginFigure(new Point(x, surfaceY), true);
                     int steps = 14;
                     for (int i = 1; i <= steps; i++)
                     {
                         double t = (double)i / steps;
                         double wx = x + trackW * t;
-                        double wy = surfaceY - amp + Math.Sin(t * Math.PI * 2.4 + _phase) * amp;
+                        double wy = surfaceY - Math.Max(1.5, amp) - Math.Sin(t * Math.PI * 2.4 + _phase) * amp * 0.8;
                         ctx.LineTo(new Point(wx, wy));
                     }
-                    ctx.LineTo(new Point(x + trackW, surfaceY + 4));
-                    ctx.LineTo(new Point(x, surfaceY + 4));
+                    ctx.LineTo(new Point(x + trackW, surfaceY));
                     ctx.EndFigure(true);
                 }
                 _wave.Data = geo;
