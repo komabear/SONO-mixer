@@ -51,7 +51,7 @@ public sealed class AudioEngine : IDisposable
         _timer?.Dispose();
         _timer = new System.Threading.Timer(_ => SafeReconcile(), null, 0, periodMs);
         _meterTimer?.Dispose();
-        _meterTimer = new System.Threading.Timer(_ => SafeLevels(), null, 60, 60);
+        _meterTimer = new System.Threading.Timer(_ => SafeLevels(), null, 25, 25);
     }
 
     /// <summary>Immediate reconcile outside the poll (e.g. right after a slider move).
