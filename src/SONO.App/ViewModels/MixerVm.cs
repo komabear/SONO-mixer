@@ -69,6 +69,11 @@ public sealed class MixerVm : ObservableObject
             lock (Settings) return Settings.Channels.ToList();
         });
         _engine.Tick += OnTick;
+        _engine.LevelsTick += levels => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var ch in Channels)
+                ch.SetPeak(levels.TryGetValue(ch.Id, out var pk) ? pk : 0);
+        });
         _hotkeys.Pressed += OnHotkey;
     }
 
