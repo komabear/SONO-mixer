@@ -64,25 +64,29 @@ public sealed class Fader : Panel
         Background = Brushes.Transparent;
         ClipToBounds = true;
 
+        // structure: TRACK (pill clip) ──> FILL (clipped child, full-height container) ──> CORE
+        // the track's rounded corners clip everything inside at EVERY height — no radius
+        // juggling at low volume
         _track = new Border
         {
             CornerRadius = new CornerRadius(22),
             Background = new ImmutableSolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
-            IsHitTestVisible = false,
+            ClipToBounds = true,          // rounds all children: fill + core
+            Child = _fill,
         };
-        // square top corners: the wave surface must join the fill flush (a domed top
-        // leaves notches at the sides where the wave can't reach)
-        _fill = new Border { CornerRadius = new CornerRadius(22), IsHitTestVisible = false };
+        _fill = new Border
+        {
+            IsHitTestVisible = false,
+            ClipToBounds = true,          // rounds the core inside the fill
+            CornerRadius = new CornerRadius(17),   // pill inner curve; dynamic below
+        };
         _meter = new Border
         {
             IsHitTestVisible = false,
-            // bottom corners follow the fill's inner curve (22px pill − 5px inset);
-            // top stays slightly rounded for a soft surface
-            CornerRadius = new CornerRadius(3, 3, 17, 17),
+            CornerRadius = new CornerRadius(3, 3, 3, 3),
         };
-        _fill.Child = _meter;   // core lives inside the fill: inherits its clip + bottom rounding
+        _fill.Child = _meter;
         Children.Add(_track);
-        Children.Add(_fill);
         UpdateColors();
     }
 
@@ -136,7 +140,10 @@ public sealed class Fader : Panel
         double fillH = frac * h;
 
         ArrangeChild(_track, x, 0, trackW, h);
-        ArrangeChild(_fill, x, h - fillH, trackW, fillH);   // track's pill clip rounds it
+        double fillR = Math.Min(17, fillH / 2);
+        _fill.CornerRadius = new CornerRadius(fillR);
+        _fill.ClipToBounds = true;   // clip the core to the fill's (dynamic) rounding
+        ArrangeChild(_fill, x, h - fillH, trackW, fillH);
 
         // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored, height =
         // smoothed live level relative to the volume fill. Reads as the "moving" part of
@@ -157,7 +164,7 @@ public sealed class Fader : Panel
                 // bottom edge pinned: y is derived from the fixed bottom line, never from coreH
                 ArrangeChild(_meter, inset, fillH - coreH, coreW, coreH);   // core coords relative to the fill
                 double r = Math.Min(17, coreH / 2);
-                _meter.CornerRadius = new CornerRadius(r, r, 0, 0);
+                _meter.CornerRadius = new CornerRadius(r, r, r, r);
                 _meter.IsVisible = true;
                 if (_fallTimer is null)
                 {
