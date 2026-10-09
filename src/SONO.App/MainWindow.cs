@@ -8,6 +8,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
 using Avalonia.Threading;
+using System.Threading.Tasks;
 using Avalonia.VisualTree;
 using SONO.App.ViewModels;
 
@@ -118,17 +119,22 @@ public sealed class MainWindow : Window
         };
         trimTimer.Start();
 
-        Dispatcher.UIThread.Post(() =>
+        // STARTUP SEQUENCE — deliberately non-blocking: the window paints first, then the
+        // expensive COM work (output device enum, hotkey registration, tray) happens on a
+        // worker thread. Previously all of it ran on the UI thread at Loaded priority,
+        // freezing the freshly-shown window for ~0.5s on first session enumeration.
+        Dispatcher.UIThread.Post(() => _vm.Start(), DispatcherPriority.Loaded);
+        Task.Run(() =>
         {
             try
             {
-                _vm.Start();
                 _vm.RefreshOutputs();
+                Dispatcher.UIThread.Post(SyncOutputBox);
                 _vm.RebindHotkeys();
-                InitializeTray();
+                Dispatcher.UIThread.Post(InitializeTray);
             }
             catch (Exception ex) { SONO.Core.Diagnostics.Log.Write($"startup: {ex}"); }
-        }, DispatcherPriority.Loaded);
+        });
     }
 
     // ---------------- theme ----------------
