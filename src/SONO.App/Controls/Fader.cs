@@ -162,7 +162,7 @@ public sealed class Fader : Panel
             {
                 double coreW = trackW - inset * 2;
                 // bottom edge pinned: y is derived from the fixed bottom line, never from coreH
-                ArrangeChild(_meter, inset, fillH - coreH, coreW, coreH);   // core coords relative to the fill
+                ArrangeChild(_meter, inset, fillH - inset - coreH, coreW, coreH);   // bottom margin = inset
                 double r = Math.Min(17, coreH / 2);
                 _meter.CornerRadius = new CornerRadius(r, r, r, r);
                 _meter.IsVisible = true;
