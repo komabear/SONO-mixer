@@ -72,7 +72,10 @@ public sealed class MixerVm : ObservableObject
         _engine.LevelsTick += levels => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
             foreach (var ch in Channels)
+            {
+                // absent from the dict = no live session = level 0 (bar must fall, not freeze)
                 ch.SetPeak(levels.TryGetValue(ch.Id, out var pk) ? pk : 0);
+            }
         });
         _hotkeys.Pressed += OnHotkey;
     }

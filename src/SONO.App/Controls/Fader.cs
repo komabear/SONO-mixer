@@ -166,6 +166,9 @@ public sealed class Fader : Panel
         _smoothed += (target - _smoothed) * 0.45;
         if (Math.Abs(target - _smoothed) < 0.001) _smoothed = target;   // settle exactly
         double level = _smoothed;
+        // the lerp must CONTINUE after the last engine push (song stopped → Level stays 0,
+        // no more PropertyChanged → no arranges → the bar would freeze mid-fall)
+        EnsureFallTimer();
 
         if (_meter is not null)
         {
@@ -187,8 +190,32 @@ public sealed class Fader : Panel
                 ArrangeChild(_meter, 0, 0, 0, 0);   // empty rect: renders nothing, no stale size
             }
         }
+        EnsureFallTimer();
 
         return finalSize;
+    }
+
+    private DispatcherTimer? _fallTimer;
+
+    /// <summary>33ms ticker that keeps the lerp animating between engine pushes; stops
+    /// itself once the bar has fully settled (zero cost at rest).</summary>
+    private void EnsureFallTimer()
+    {
+        if (_fallTimer is not null) return;
+        _fallTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
+        _fallTimer.Tick += (_, _) =>
+        {
+            double target = Math.Pow(Math.Clamp(Level, 0, 1), 2.5);
+            _smoothed += (target - _smoothed) * 0.45;
+            if (Math.Abs(target - _smoothed) < 0.002)
+            {
+                _smoothed = target;
+                _fallTimer?.Stop();
+                _fallTimer = null;
+            }
+            InvalidateArrange();
+        };
+        _fallTimer.Start();
     }
 
     private static void ArrangeChild(Control c, double x, double y, double w, double h)
