@@ -87,6 +87,14 @@ public sealed class MixerVm : ObservableObject
             ch.UpdateFromEngine(vol, muted);
             ch.SyncApps();
         }
+        // per-channel peak (max over member sessions) → drives the fader water animation
+        foreach (var ch in Channels)
+        {
+            double peak = 0;
+            foreach (var sess in snap.Sessions)
+                if (sess.ChannelId == ch.Id && sess.Peak > peak) peak = sess.Peak;
+            ch.SetPeak(peak);
+        }
         RefreshApps(snap);
     }
 
@@ -257,7 +265,7 @@ public sealed class MixerVm : ObservableObject
         // show it immediately even if it has no live session (UI thread — Apps is UI-bound)
         Avalonia.Threading.Dispatcher.UIThread.Post(() => Apps.Add(new AppRowVm(new SessionView(
             Key: "pinned:" + exe, Exe: exe, DisplayName: exe, Pid: 0, IsSystem: false,
-            State: "Inactive", ChannelId: null, Volume: 1f, Mute: false))));
+            State: "Inactive", ChannelId: null, Volume: 1f, Mute: false, Peak: 0))));
     }
 
     /// <summary>Apps available for the panel + picker: everything ever seen, not pinned yet.</summary>

@@ -10,7 +10,8 @@ public sealed record SessionView(
     string State,          // "Active" / "Inactive"
     string? ChannelId,     // channel that owns this exe, null = independent
     float Volume,          // current session volume 0..1
-    bool Mute)
+    bool Mute,
+    float Peak)            // live audio level 0..1 (meter), for wave animations
 {
     public bool Owned => ChannelId is not null;
 }

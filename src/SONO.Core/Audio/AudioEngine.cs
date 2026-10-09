@@ -225,10 +225,12 @@ public sealed class AudioEngine : IDisposable
 
         float curVol = 1f; bool curMute = false;
         try { curVol = asc.SimpleAudioVolume.Volume; curMute = asc.SimpleAudioVolume.Mute; } catch { }
+        float peak = 0f;
+        try { peak = asc.AudioMeterInformation.MasterPeakValue; } catch { }
 
         sessions.Add(new SessionView(
             key, exe, PrettyName(asc, pid, exe, title), pid, pid == 0,
-            stateStr.Replace("AudioSessionState", ""), channelId, curVol, curMute));
+            stateStr.Replace("AudioSessionState", ""), channelId, curVol, curMute, peak));
     }
 
     private static string SessionKey(uint pid, AudioSessionControl asc)
