@@ -4,9 +4,10 @@ A lightweight per-app audio mixer for Windows. Organize your apps into four grou
 **Game / Chat / Media / Aux** — and control each group's volume, mute, and global
 hotkeys from one place. No drivers, no extra audio devices, no setup: install and use.
 
-Built with C# / WinForms (.NET 10). Group volumes are applied through Windows' own
-audio-session APIs — the same mechanism the system Volume mixer uses — so audio stays
-bit-perfect with zero added latency.
+Built with C# / Avalonia (.NET 10). SONO controls each app through **Windows 11's
+built-in per-app volume feature** — the same one the system Volume Mixer uses —
+via the official Windows audio-session APIs. Audio stays bit-perfect with zero
+added latency, and every app keeps playing to your normal output.
 
 ## How it works
 
@@ -17,6 +18,10 @@ Overwatch ───────► GAME group  (volume 1.00) ──┤   group's
                                                │   apps' Windows audio sessions
 all apps play straight to your normal output  ◄┘
 ```
+
+SONO doesn't create or redirect audio anywhere. It simply sets the per-app volume
+that Windows itself exposes — the same sliders you'd move by hand in the Volume
+Mixer — automatically, for every app in a group, and keeps them there.
 
 - Drag any app onto a group card; its volume then follows that group's slider,
   mute button, and hotkeys — system-wide, even while a game has focus.
@@ -33,7 +38,7 @@ all apps play straight to your normal output  ◄┘
   in the Applications list
 - **Global hotkeys** — any key combo or bare multimedia keys, per group:
   Vol− / Vol+ / Mute, adjustable step size (⚙ → *Hotkey volume step…*)
-- **Volume OSD** — Sonar-style popup on hotkey presses: channel name, percentage,
+- **Volume OSD** — popup on hotkey presses: channel name, percentage,
   and a channel-colored volume bar. Never steals focus, click-through, topmost;
   9 screen positions + Off (⚙ → *Volume popup position*)
 - **System output switching** — from the app or the tray, current default
@@ -96,11 +101,3 @@ behind — SONO installs no drivers and touches no system audio settings.
   SONO enforces the group's volume on it. Remove it from the group (✕ on its
   chip) if you want to control it independently.
 - **Anything else** → check `%APPDATA%\SONO\log.txt`; every error is logged there.
-
-## History note
-
-SONO previously supported a "virtual devices" mode built on Virtual Audio Cable
-(per-group virtual outputs + loopback capture/mixing, Sonar-style). It was removed
-in favor of the simpler, driver-free group-volume model — no third-party license,
-no added latency, and an entire class of drift/dropout bugs eliminated by design.
-The old implementation lives in the git history.
