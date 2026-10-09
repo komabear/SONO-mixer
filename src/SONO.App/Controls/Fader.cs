@@ -200,6 +200,9 @@ public sealed class Fader : Panel
             {
                 _meter.IsVisible = false;
                 _meter.CornerRadius = new CornerRadius(17, 17, 17, 17);
+                _smoothed = 0;   // stale value must not survive silence (instant-full flash)
+                _fallTimer?.Stop();
+                _fallTimer = null;
             }
         }
 
