@@ -112,6 +112,21 @@ public sealed class HotkeyBox : Border
         if (change.Property == HotkeyTextProperty) UpdateVisual();
     }
 
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        Themes.ThemeManager.ThemeChanged += OnThemeChanged;
+        UpdateVisual();   // re-derive colors for the theme active at attach time
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        Themes.ThemeManager.ThemeChanged -= OnThemeChanged;
+    }
+
+    private void OnThemeChanged() => Avalonia.Threading.Dispatcher.UIThread.Post(UpdateVisual);
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);

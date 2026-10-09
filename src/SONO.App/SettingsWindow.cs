@@ -4,6 +4,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using Avalonia.Media.Imaging;
 using SONO.App.Controls;
 using SONO.App.Themes;
@@ -35,9 +36,26 @@ public sealed class SettingsWindow : Window
         Background = MainWindow.Res("SonoBgBrush");
         FontFamily = new FontFamily("Segoe UI Variable Display, Segoe UI, Inter");
         Content = Build();
-        // live theme switch: refresh the window background (snapshot in ctor goes stale)
+        // live theme switch: refresh window bg + every Fluent control that ignores DynamicResource
         Themes.ThemeManager.ThemeChanged += () =>
-            Avalonia.Threading.Dispatcher.UIThread.Post(() => Background = MainWindow.Res("SonoBgBrush"));
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                Background = MainWindow.Res("SonoBgBrush");
+                foreach (var b in this.GetVisualDescendants().OfType<Button>().Where(x => x.Classes.Contains("sono")))
+                {
+                    b.Background = MainWindow.Res("SonoFieldBrush");
+                    b.Foreground = MainWindow.Res("SonoTextBrush");
+                }
+                foreach (var cb in this.GetVisualDescendants().OfType<CheckBox>())
+                    cb.Foreground = MainWindow.Res("SonoTextBrush");
+                foreach (var cbi in this.GetVisualDescendants().OfType<ComboBox>())
+                {
+                    cbi.Foreground = MainWindow.Res("SonoTextBrush");
+                    cbi.Background = MainWindow.Res("SonoFieldBrush");
+                }
+                foreach (var card in this.GetVisualDescendants().OfType<Border>().Where(x => x.Classes.Contains("card")))
+                    card.Background = MainWindow.Res("SonoCardBrush");
+            });
     }
 
     /// <summary>Fired when a theme is picked here — main window repaints everything.</summary>
