@@ -26,7 +26,6 @@ public sealed class Fader : Panel
 
     private Border? _track;
     private Border? _fill;
-    private Border? _thumb;
     private bool _dragging;
 
     public event Action? ValueChanged;
@@ -64,24 +63,14 @@ public sealed class Fader : Panel
             IsHitTestVisible = false,
         };
         _fill = new Border { CornerRadius = new CornerRadius(22), IsHitTestVisible = false };
-        _thumb = new Border
-        {
-            Width = 34,
-            Height = 34,
-            CornerRadius = new CornerRadius(17),
-            BorderThickness = new Thickness(3),
-            BoxShadow = new BoxShadows(new BoxShadow { Blur = 6, Color = Color.FromArgb(120, 0, 0, 0), OffsetY = 2 }),
-            IsHitTestVisible = false,
-        };
         Children.Add(_track);
         Children.Add(_fill);
-        Children.Add(_thumb);
         UpdateColors();
     }
 
     private void UpdateColors()
     {
-        if (_fill is null || _thumb is null) return;
+        if (_fill is null) return;
         if (Color.TryParse(GroupColor, out var c))
         {
             _fill.Background = new LinearGradientBrush
@@ -94,14 +83,10 @@ public sealed class Fader : Panel
                     new GradientStop(Color.FromArgb(235, c.R, c.G, c.B), 1),
                 },
             };
-            _thumb.Background = new ImmutableSolidColorBrush(Color.FromArgb(255, 43, 45, 53));
-            _thumb.BorderBrush = new ImmutableSolidColorBrush(c);
         }
         else
         {
             _fill.Background = Brushes.Gray;
-            _thumb.Background = Brushes.DimGray;
-            _thumb.BorderBrush = Brushes.Gray;
         }
     }
 
@@ -116,7 +101,7 @@ public sealed class Fader : Panel
     {
         double h = finalSize.Height;
         double w = finalSize.Width;
-        if (h < 1 || _track is null || _fill is null || _thumb is null) return finalSize;
+        if (h < 1 || _track is null || _fill is null) return finalSize;
 
         double trackW = 60;
         double x = Math.Max(0, (w - trackW) / 2);
@@ -125,13 +110,8 @@ public sealed class Fader : Panel
         double frac = range <= 0 ? 1 : Math.Clamp((Value - Minimum) / range, 0, 1);
         double fillH = frac * h;
 
-        // thumb rides the TOP of the fill; clamp so it never leaves the track at 0% / 100%
-        const double halfThumb = 17;
-        double cy = Math.Clamp(h - fillH, halfThumb, h - halfThumb);
-
         ArrangeChild(_track, x, 0, trackW, h);
         ArrangeChild(_fill, x, h - fillH, trackW, fillH);
-        ArrangeChild(_thumb, (w - _thumb.Width) / 2, cy - halfThumb, _thumb.Width, _thumb.Height);
 
         return finalSize;
     }
