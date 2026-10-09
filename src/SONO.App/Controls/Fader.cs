@@ -28,8 +28,6 @@ public sealed class Fader : Panel
     private Border? _track;
     private Border? _fill;
     private Border? _meter;
-    private double _smoothed;
-    private DispatcherTimer? _fallTimer;
     private bool _dragging;
 
     /// <summary>Live output level 0..1 for this channel (engine peak). Drives wave amplitude.</summary>
@@ -145,12 +143,9 @@ public sealed class Fader : Panel
         if (fillH < 1)
         {
             if (Level > 0.05)
-                SONO.Core.Diagnostics.Log.Write($"eq-debug vol0: level={Level:0.00} smoothed={_smoothed:0.00} h={h:0}");
+                SONO.Core.Diagnostics.Log.Write($"eq-debug vol0: level={Level:0.00} h={h:0}");
             _fill.IsVisible = false;
             _meter.IsVisible = false;
-            _smoothed = 0;
-            _fallTimer?.Stop();
-            _fallTimer = null;
             return finalSize;
         }
         _fill.IsVisible = true;
@@ -159,20 +154,13 @@ public sealed class Fader : Panel
         _fill.ClipToBounds = true;   // clip the core to the fill's (dynamic) rounding
         ArrangeChild(_fill, 0, h - fillH, trackW, fillH);   // coords relative to the TRACK
 
-        // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored. The displayed
-        // height LERPs toward the live level every frame (exponential chase) — soft motion,
-        // no snap; rising and falling feel identical.
+        // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored. NO smoothing,
+        // NO lerp, NO timers — the displayed height is the live level (gamma-shaped),
+        // updated the moment the engine pushes it. One code path, zero hidden state.
         // SENSITIVITY: steep gamma on the RAW level — Windows session peaks for music sit
         // 0.4..1.0, and ^2.5 spreads them across the bar: quiet parts ~0.1, average ~0.4,
-        // hits 1.0. Auto-gain was tried and removed: on compressed modern masters every
-        // peak IS the recent max (normalized ≈ 1.0 constantly) → guaranteed full-fill.
-        double target = Math.Pow(Math.Clamp(Level, 0, 1), 2.5);
-        const double lerpK = 0.22;          // fraction of the remaining gap closed per frame
-        const double maxRise = 0.08;        // hard per-frame rise cap: no single-frame full-bar jumps
-        double lerped = _smoothed + (target - _smoothed) * lerpK;
-        _smoothed = Math.Min(lerped, _smoothed + maxRise);   // fall is free; rise is capped
-        if (Math.Abs(target - _smoothed) < 0.001) _smoothed = target;   // settle exactly
-        double level = Math.Clamp(_smoothed, 0, 1);
+        // hits 1.0.
+        double level = Math.Pow(Math.Clamp(Level, 0, 1), 2.5);
 
         if (_meter is not null)
         {
@@ -185,28 +173,11 @@ public sealed class Fader : Panel
                 double r = Math.Min(17, coreH / 2);
                 _meter.CornerRadius = new CornerRadius(r, r, r, r);
                 _meter.IsVisible = true;
-                if (_fallTimer is null)
-                {
-                    // chaser only needs to run while catching up to the target
-                    _fallTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
-                    _fallTimer.Tick += (_, _) =>
-                    {
-                        // advance the lerp even without new engine ticks, stop when settled
-                        double tgt = Math.Pow(Math.Clamp(Level, 0, 1), 2.5);
-                        _smoothed += (tgt - _smoothed) * 0.30;
-                        if (Math.Abs(tgt - _smoothed) < 0.001) { _smoothed = tgt; _fallTimer?.Stop(); _fallTimer = null; }
-                        InvalidateArrange();
-                    };
-                    _fallTimer.Start();
-                }
             }
             else
             {
                 _meter.IsVisible = false;
                 _meter.CornerRadius = new CornerRadius(17, 17, 17, 17);
-                _smoothed = 0;   // stale value must not survive silence (instant-full flash)
-                _fallTimer?.Stop();
-                _fallTimer = null;
             }
         }
 
