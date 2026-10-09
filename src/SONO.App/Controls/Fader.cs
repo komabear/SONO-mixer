@@ -27,14 +27,7 @@ public sealed class Fader : Panel
 
     private Border? _track;
     private Border? _fill;
-    private Border? _meter;
-    private double _lastCoreH;
-    private double _smoothed;
     private bool _dragging;
-
-    /// <summary>Live output level 0..1 for this channel (engine peak). Drives wave amplitude.</summary>
-    public static readonly StyledProperty<double> LevelProperty = AvaloniaProperty.Register<Fader, double>(nameof(Level), 0);
-    public double Level { get => GetValue(LevelProperty); set => SetValue(LevelProperty, value); }
 
     public event Action? ValueChanged;
     public event Action? CommitRequested;
@@ -53,7 +46,7 @@ public sealed class Fader : Panel
 
     static Fader()
     {
-        AffectsArrange<Fader>(ValueProperty, MinimumProperty, MaximumProperty, LevelProperty);
+        AffectsArrange<Fader>(ValueProperty, MinimumProperty, MaximumProperty);
         ValueProperty.Changed.AddClassHandler<Fader>((f, _) => { if (!f._dragging) f.InvalidateArrange(); });
         GroupColorProperty.Changed.AddClassHandler<Fader>((f, _) => f.UpdateColors());
     }
@@ -73,12 +66,6 @@ public sealed class Fader : Panel
             ClipToBounds = true,          // rounds the core inside the fill
             CornerRadius = new CornerRadius(17),   // pill inner curve; dynamic below
         };
-        _meter = new Border
-        {
-            IsHitTestVisible = false,
-            CornerRadius = new CornerRadius(3, 3, 3, 3),
-        };
-        _fill.Child = _meter;
         _track = new Border
         {
             CornerRadius = new CornerRadius(22),
@@ -105,17 +92,10 @@ public sealed class Fader : Panel
                     new GradientStop(Color.FromArgb(235, c.R, c.G, c.B), 1),
                 },
             };
-            if (_meter is not null)
-                _meter.Background = new ImmutableSolidColorBrush(Color.FromArgb(
-                    235,
-                    (byte)Math.Min(255, c.R + 50),
-                    (byte)Math.Min(255, c.G + 50),
-                    (byte)Math.Min(255, c.B + 50)));
         }
         else
         {
             _fill.Background = Brushes.Gray;
-            if (_meter is not null) _meter.Background = Brushes.Gray;
         }
     }
 
@@ -147,7 +127,6 @@ public sealed class Fader : Panel
             // arrange to EMPTY rects (never IsVisible=false: a freshly-visible control
             // renders once with its stale last-arranged size — the "100% flash")
             ArrangeChild(_fill, 0, h, trackW, 0);
-            ArrangeChild(_meter, 0, 0, 0, 0);
             return finalSize;
         }
         double fillR = Math.Min(17, fillH / 2);
@@ -155,66 +134,10 @@ public sealed class Fader : Panel
         _fill.ClipToBounds = true;   // clip the core to the fill's (dynamic) rounding
         ArrangeChild(_fill, 0, h - fillH, trackW, fillH);   // coords relative to the TRACK
 
-        // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored.
-        // SENSITIVITY: steep gamma on the RAW level — Windows session peaks for music sit
-        // 0.4..1.0, and ^2.5 spreads them across the bar: quiet parts ~0.1, average ~0.4,
-        // hits 1.0.
-        // LERP: exponential chase toward the live level (45% of the remaining gap per
-        // frame) — soft motion, no snap, symmetric rise/fall. Safe now that the
-        // stale-size flash is fixed at the root (empty-rect hiding).
-        double target = Math.Pow(Math.Clamp(Level, 0, 1), 2.5);
-        _smoothed += (target - _smoothed) * 0.45;
-        if (Math.Abs(target - _smoothed) < 0.001) _smoothed = target;   // settle exactly
-        double level = _smoothed;
-        // the lerp must CONTINUE after the last engine push (song stopped → Level stays 0,
-        // no more PropertyChanged → no arranges → the bar would freeze mid-fall)
-        EnsureFallTimer();
-
-        if (_meter is not null)
-        {
-            // whole-pixel height: sub-pixel sizes made the bottom edge wobble ±1px
-            double coreH = Math.Floor(Math.Min(fillH, fillH * level));
-            _lastCoreH = coreH;
-            if (coreH > 2)
-            {
-                // same width as the fill — bottom flush, clipped by the same rounding
-                ArrangeChild(_meter, 0, fillH - coreH, trackW, coreH);
-                double r = Math.Min(17, coreH / 2);
-                _meter.CornerRadius = new CornerRadius(r, r, r, r);
-                _meter.IsVisible = true;
-            }
-            else
-            {
-                ArrangeChild(_meter, 0, 0, 0, 0);   // empty rect: renders nothing, no stale size
-            }
-        }
-        EnsureFallTimer();
-
         return finalSize;
     }
 
-    private DispatcherTimer? _fallTimer;
 
-    /// <summary>33ms ticker that keeps the lerp animating between engine pushes; stops
-    /// itself once the bar has fully settled (zero cost at rest).</summary>
-    private void EnsureFallTimer()
-    {
-        if (_fallTimer is not null) return;
-        _fallTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
-        _fallTimer.Tick += (_, _) =>
-        {
-            double target = Math.Pow(Math.Clamp(Level, 0, 1), 2.5);
-            _smoothed += (target - _smoothed) * 0.45;
-            if (Math.Abs(target - _smoothed) < 0.002)
-            {
-                _smoothed = target;
-                _fallTimer?.Stop();
-                _fallTimer = null;
-            }
-            InvalidateArrange();
-        };
-        _fallTimer.Start();
-    }
 
     private static void ArrangeChild(Control c, double x, double y, double w, double h)
     {
