@@ -152,6 +152,18 @@ public sealed class Fader : Panel
         double fillH = frac * h;
 
         ArrangeChild(_track, x, 0, trackW, h);
+        // zero-volume: hide the fill + core outright (visibility, not just 0-size arrange —
+        // a same-frame 0-size arrange can render one stale frame before taking effect)
+        if (fillH < 1)
+        {
+            _fill.IsVisible = false;
+            _meter.IsVisible = false;
+            _smoothed = 0;
+            _fallTimer?.Stop();
+            _fallTimer = null;
+            return finalSize;
+        }
+        _fill.IsVisible = true;
         double fillR = Math.Min(17, fillH / 2);
         _fill.CornerRadius = new CornerRadius(fillR);
         _fill.ClipToBounds = true;   // clip the core to the fill's (dynamic) rounding
