@@ -148,13 +148,12 @@ public sealed class Fader : Panel
 
         if (_meter is not null)
         {
-            double coreH = Math.Min(fillH, fillH * level);
+            const double inset = 5;          // same border on all four sides
+            double coreH = Math.Min(fillH, fillH * level) - inset;   // leave room for the bottom border
             if (coreH > 3)
             {
-                // inset 4px from each side of the fill so it reads as INSIDE the pill
-                double inset = 5;
                 double coreW = trackW - inset * 2;
-                ArrangeChild(_meter, x + inset, h - coreH, coreW, coreH);
+                ArrangeChild(_meter, x + inset, h - coreH - inset, coreW, coreH);
                 _meter.IsVisible = true;
                 if (_fallTimer is null)
                 {
