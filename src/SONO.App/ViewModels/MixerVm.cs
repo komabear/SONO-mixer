@@ -123,9 +123,10 @@ public sealed class MixerVm : ObservableObject
             bool isLive = live.Any(s => s.Exe.Equals(exe, StringComparison.OrdinalIgnoreCase));
             bool isPinned;
             lock (Settings) isPinned = PinnedApps.Contains(exe, StringComparer.OrdinalIgnoreCase);
-            bool inGroup;
-            lock (Settings) inGroup = Settings.Channels.Any(c => c.Executables.Contains(exe, StringComparer.OrdinalIgnoreCase));
-            if (!isLive && !isPinned && !inGroup)
+            // live or explicitly pinned → keep. Closed apps disappear; their group
+            // membership persists in Settings.Channels, so they re-appear (same channel)
+            // the moment they play again.
+            if (!isLive && !isPinned)
                 Apps.RemoveAt(i);
         }
 
