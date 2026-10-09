@@ -29,7 +29,6 @@ public sealed class Fader : Panel
     private Border? _fill;
     private Border? _meter;
     private double _smoothed;
-    private double _recentMax = 0.1;   // auto-gain reference (decaying peak)
     private DispatcherTimer? _fallTimer;
     private bool _dragging;
 
@@ -120,17 +119,6 @@ public sealed class Fader : Panel
         }
     }
 
-    /// <summary>Auto-gain + gamma mapping from the raw level to the displayed target —
-    /// ONE definition so the arrange pass and the chaser timer always agree.</summary>
-    private double TargetFrom(double raw, double recentMax)
-    {
-        raw = Math.Clamp(raw, 0, 1);
-        _recentMax = Math.Max(raw, recentMax * 0.97);      // fast ~300ms adaptation
-        if (_recentMax < 0.25) _recentMax = 0.25;          // floor: silence stays calm
-        double normalized = raw / _recentMax;
-        return 1 - Math.Pow(1 - Math.Clamp(normalized, 0, 1), 3);
-    }
-
     protected override Size MeasureOverride(Size availableSize)
     {
         // children are positioned manually; they need no intrinsic size
@@ -174,11 +162,11 @@ public sealed class Fader : Panel
         // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored. The displayed
         // height LERPs toward the live level every frame (exponential chase) — soft motion,
         // no snap; rising and falling feel identical.
-        // SENSITIVITY: auto-gain. Raw peaks sit 0.85-1.0 for loud music — even gamma can't
-        // unpin them. Track a decaying rolling max (~2s) and normalize against it: the bar
-        // ALWAYS uses the full range relative to recent loudness, so changes stay visible
-        // at any volume. Gamma on top for extra spread.
-        double target = TargetFrom(Level, _recentMax);
+        // SENSITIVITY: steep gamma on the RAW level — Windows session peaks for music sit
+        // 0.4..1.0, and ^2.5 spreads them across the bar: quiet parts ~0.1, average ~0.4,
+        // hits 1.0. Auto-gain was tried and removed: on compressed modern masters every
+        // peak IS the recent max (normalized ≈ 1.0 constantly) → guaranteed full-fill.
+        double target = Math.Pow(Math.Clamp(Level, 0, 1), 2.5);
         const double lerpK = 0.22;          // fraction of the remaining gap closed per frame
         const double maxRise = 0.08;        // hard per-frame rise cap: no single-frame full-bar jumps
         double lerped = _smoothed + (target - _smoothed) * lerpK;
@@ -204,9 +192,8 @@ public sealed class Fader : Panel
                     _fallTimer.Tick += (_, _) =>
                     {
                         // advance the lerp even without new engine ticks, stop when settled
-                        double tgt = TargetFrom(Math.Clamp(Level, 0, 1), _recentMax);
-                        double stepped = _smoothed + (tgt - _smoothed) * 0.22;
-                        _smoothed = Math.Min(stepped, _smoothed + 0.08);   // same rise cap
+                        double tgt = Math.Pow(Math.Clamp(Level, 0, 1), 2.5);
+                        _smoothed += (tgt - _smoothed) * 0.30;
                         if (Math.Abs(tgt - _smoothed) < 0.001) { _smoothed = tgt; _fallTimer?.Stop(); _fallTimer = null; }
                         InvalidateArrange();
                     };
