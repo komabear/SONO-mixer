@@ -142,6 +142,7 @@ public sealed class HotkeyManager : IDisposable
     {
         lock (this)
         {
+            SONO.Core.Diagnostics.Log.Write($"ApplyAll: hwnd=0x{_hwnd.ToInt64():X} bindings={bindings.Count()} registeredNow={_registered.Count} thread={Environment.CurrentManagedThreadId}");
             _suspended = false;   // an explicit apply always ends suspension
             _lastBindings = null;
             var errors = new List<string>();
@@ -155,7 +156,16 @@ public sealed class HotkeyManager : IDisposable
                 if (!TryParse(text, out var mods, out var vk, out var err)) { errors.Add($"'{text}': {err}"); continue; }
 
                 int id = _nextId++;
-                if (RegisterHotKey(_hwnd, id, mods | MOD_NOREPEAT, vk))
+                bool ok = RegisterHotKey(_hwnd, id, mods | MOD_NOREPEAT, vk);
+                // 1408 = ERROR_HOTKEY_ALREADY_REGISTERED: right after a previous instance
+                // is killed, Windows can take a moment to release its registrations —
+                // retry briefly before giving up
+                for (int attempt = 0; !ok && attempt < 5; attempt++)
+                {
+                    System.Threading.Thread.Sleep(150);
+                    ok = RegisterHotKey(_hwnd, id, mods | MOD_NOREPEAT, vk);
+                }
+                if (ok)
                 {
                     _registered[id] = (mods, vk);
                     _bindings[id] = (channelId, slot);
