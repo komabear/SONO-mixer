@@ -269,7 +269,8 @@ public sealed class AudioEngine : IDisposable
                         if (enforced.Mute) peak = 0f;
                         else peak *= enforced.Vol;
                     }
-                    if (peak > 0f) result[channelId] = Math.Max(peak, result.GetValueOrDefault(channelId));
+                    if (peak > 0f)
+                        result[channelId] = Math.Max(peak, result.GetValueOrDefault(channelId));
                 }
             }
             if (result.Count > 0) LevelsTick?.Invoke(result);
