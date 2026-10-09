@@ -10,7 +10,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
-    <Version>2.2.3</Version>
+    <Version>3.0.0</Version>
     <AssemblyName>SONO.App</AssemblyName>
     <ApplicationIcon>..\..\installer\sono.ico</ApplicationIcon>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
