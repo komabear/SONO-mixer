@@ -125,7 +125,18 @@ public sealed class HotkeyBox : Border
         Themes.ThemeManager.ThemeChanged -= OnThemeChanged;
     }
 
-    private void OnThemeChanged() => Avalonia.Threading.Dispatcher.UIThread.Post(UpdateVisual);
+    /// <summary>External theme refresh (parent strip calls this on its own repaint path).</summary>
+    public void RefreshTheme() => UpdateVisual();
+
+    private void OnThemeChanged()
+    {
+        try
+        {
+            SONO.Core.Diagnostics.Log.Write("hotkeybox: theme change restyle");
+            Avalonia.Threading.Dispatcher.UIThread.Post(UpdateVisual);
+        }
+        catch (Exception ex) { SONO.Core.Diagnostics.Log.Write("hotkeybox restyle: " + ex.Message); }
+    }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
