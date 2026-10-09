@@ -136,6 +136,10 @@ public sealed class Fader : Panel
         double fillH = frac * h;
 
         ArrangeChild(_track, x, 0, trackW, h);
+        // fill corners shrink with height: a 22px radius on a 20px-tall low-volume fill
+        // gets clamped by the renderer into a distorted near-square
+        double fillR = Math.Min(22, fillH / 2);
+        _fill.CornerRadius = new CornerRadius(fillR);
         ArrangeChild(_fill, x, h - fillH, trackW, fillH);
 
         // LIVE CORE: an inner brighter bar inside the fill, bottom-anchored, height =
@@ -156,9 +160,9 @@ public sealed class Fader : Panel
                 double coreW = trackW - inset * 2;
                 // bottom edge pinned: y is derived from the fixed bottom line, never from coreH
                 ArrangeChild(_meter, x + inset, h - inset - coreH, coreW, coreH);
-                // top corners round like the pill's inner curve; shrink for very short bars
+                // all corners shrink with height: clamped radii distort at ~5% volume
                 double r = Math.Min(17, coreH / 2);
-                _meter.CornerRadius = new CornerRadius(r, r, 17, 17);
+                _meter.CornerRadius = new CornerRadius(r, r, Math.Min(17, coreH / 2), Math.Min(17, coreH / 2));
                 _meter.IsVisible = true;
                 if (_fallTimer is null)
                 {
