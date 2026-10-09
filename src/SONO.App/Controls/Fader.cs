@@ -70,11 +70,11 @@ public sealed class Fader : Panel
         };
         // square top corners: the wave surface must join the fill flush (a domed top
         // leaves notches at the sides where the wave can't reach)
-        _fill = new Border { CornerRadius = new CornerRadius(0, 0, 22, 22), IsHitTestVisible = false };
+        _fill = new Border { CornerRadius = new CornerRadius(22), IsHitTestVisible = false };
         _glow = new Border
         {
             IsHitTestVisible = false,
-            CornerRadius = new CornerRadius(3),
+            CornerRadius = new CornerRadius(4),
         };
         Children.Add(_track);
         Children.Add(_fill);
