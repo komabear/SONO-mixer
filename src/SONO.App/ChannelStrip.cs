@@ -30,6 +30,7 @@ public sealed class ChannelStrip : Border
     private readonly TextBlock _count;
     private readonly HotkeyBox _hkDown, _hkUp, _hkMute;
     private StackPanel? _hksHost;
+    private readonly List<Border> _hkRowBorders = new();
     private bool _dragHover;
     private static ChannelStrip? _hovered;  // the one strip currently showing the drag tint
 
@@ -232,7 +233,9 @@ public sealed class ChannelStrip : Border
         row.Children.Add(lbl);
         row.Children.Add(box);
         // FIXED height: hotkey text changes must never reflow the strip (which resizes the fader)
-        return new Border { CornerRadius = new CornerRadius(7), Padding = new Thickness(6, 2), Height = 30, Child = row };
+        var b = new Border { CornerRadius = new CornerRadius(7), Padding = new Thickness(6, 2), Height = 30, Child = row };
+        _hkRowBorders.Add(b);
+        return b;
     }
 
     // ---------------- drag-drop ----------------
@@ -312,6 +315,23 @@ public sealed class ChannelStrip : Border
         _count.Foreground = B(p.Muted);
         _fader.GroupColor = GroupHex;
         _muteBtn.Background = TintBrush(GroupHex, _ch.Muted ? 0.45 : 0.22);
+        // hotkey rows: window-background tone with a dark blend of the group color —
+        // always a DARKER shade of the channel color, per theme
+        var darker = DarkerBlend(GroupHex, 0.55f);
+        foreach (var b in _hkRowBorders) b.Background = darker;
+        _hkDown.BackgroundOverride = null;
+        _hkUp.BackgroundOverride = null;
+        _hkMute.BackgroundOverride = null;
+    }
+
+    /// <summary>Opaque blend of the group color toward black — the "darker channel shade".</summary>
+    private static IBrush DarkerBlend(string hex, float keepRatio)
+    {
+        if (!Color.TryParse(hex, out var c)) return new ImmutableSolidColorBrush(Color.FromRgb(30, 32, 38));
+        var bg = Color.TryParse(Themes.ThemeManager.Current.Bg, out var b) ? b : Color.FromRgb(22, 24, 30);
+        // mix: 55% toward the theme bg from the group color (per-theme darkness anchor)
+        byte Mix(byte gc, byte bc) => (byte)(gc * keepRatio + bc * (1 - keepRatio));
+        return new ImmutableSolidColorBrush(Color.FromRgb(Mix(c.R, bg.R), Mix(c.G, bg.G), Mix(c.B, bg.B)));
     }
 
     private static IBrush Solid(string hex) =>

@@ -13,7 +13,7 @@ namespace SONO.App;
 public static unsafe class UiIcon
 {
     private static readonly Dictionary<string, Bitmap?> _cache = new();
-    private static readonly Dictionary<(string, bool), Bitmap> _tinted = new();
+    private static readonly Dictionary<(string, string), Bitmap> _tinted = new();
 
     /// <summary>True when the current theme is light (icons must flip to dark glyphs).</summary>
     public static bool IsLightTheme
@@ -27,16 +27,30 @@ public static unsafe class UiIcon
         }
     }
 
+    /// <summary>The glyph color for the CURRENT theme: the theme's own Text color
+    /// (contrast-correct by definition), falling back to the light/dark flip.</summary>
+    public static Color ThemeGlyphColor
+    {
+        get
+        {
+            if (Color.TryParse(Themes.ThemeManager.Current.Text, out var t)) return t;
+            return IsLightTheme ? Color.Parse("#3A3A3A") : Colors.White;
+        }
+    }
+
     /// <summary>Recolor a white-glyph PNG: keep alpha, set RGB to the target color.
-    /// Cache key includes the target shade so theme switches re-derive.</summary>
+    /// Cache key includes the target color so theme switches re-derive.</summary>
     public static Bitmap? GetTinted(string name, bool darkGlyph)
     {
-        var key = (name, darkGlyph);
+        return GetTinted(name, ThemeGlyphColor);
+    }
+
+    public static Bitmap? GetTinted(string name, Color target)
+    {
+        var key = (name, target.ToString());
         if (_tinted.TryGetValue(key, out var cached)) return cached;
         var src = Get(name);
         if (src is null) return null;
-
-        var target = darkGlyph ? Color.Parse("#3A3A3A") : Colors.White;
         var px = new byte[src.PixelSize.Width * src.PixelSize.Height * 4];
         unsafe
         {
@@ -82,18 +96,18 @@ public static unsafe class UiIcon
         return bmp;
     }
 
-    /// <summary>Button whose Content is a centered, theme-tinted icon.</summary>
+    /// <summary>Button whose Content is a centered, theme-tinted icon. Re-tints on theme change.</summary>
     public static Button IconButton(string name, int size = 16)
     {
         var img = new Image
         {
-            Source = GetTinted(name, IsLightTheme),
+            Source = GetTinted(name, ThemeGlyphColor),
             Width = size,
             Height = size,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        return new Button
+        var btn = new Button
         {
             Classes = { "sono" },
             Padding = new Thickness(0),
@@ -101,5 +115,12 @@ public static unsafe class UiIcon
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
         };
+        // live re-tint when the theme changes (glyph color = theme Text)
+        Themes.ThemeManager.ThemeChanged += () =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (btn.Content is Image i) i.Source = GetTinted(name, ThemeGlyphColor);
+            });
+        return btn;
     }
 }
