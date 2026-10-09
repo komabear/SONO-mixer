@@ -50,7 +50,7 @@
   <Style Selector="CheckBox">
     <Setter Property="Foreground" Value="{DynamicResource SonoTextBrush}"/>
   </Style>
-  <Style Selector="CheckBox: pointerover /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector="CheckBox:pointerover /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Foreground" Value="{DynamicResource SonoTextBrush}"/>
   </Style>
   <Style Selector="TextBox">
