@@ -40,6 +40,8 @@ public sealed class SettingsWindow : Window
         Themes.ThemeManager.ThemeChanged += () =>
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
+                try
+                {
                 Background = MainWindow.Res("SonoBgBrush");
                 foreach (var b in this.GetVisualDescendants().OfType<Button>().Where(x => x.Classes.Contains("sono")))
                 {
@@ -55,6 +57,8 @@ public sealed class SettingsWindow : Window
                 }
                 foreach (var card in this.GetVisualDescendants().OfType<Border>().Where(x => x.Classes.Contains("card")))
                     card.Background = MainWindow.Res("SonoCardBrush");
+                }
+                catch (Exception ex) { SONO.Core.Diagnostics.Log.Write("settings restyle: " + ex.Message); }
             });
     }
 

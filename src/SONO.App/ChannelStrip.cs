@@ -322,6 +322,9 @@ public sealed class ChannelStrip : Border
         _hkDown.BackgroundOverride = null;
         _hkUp.BackgroundOverride = null;
         _hkMute.BackgroundOverride = null;
+        _hkDown.RefreshTheme();
+        _hkUp.RefreshTheme();
+        _hkMute.RefreshTheme();
     }
 
     /// <summary>Opaque blend of the group color toward black — the "darker channel shade".</summary>
