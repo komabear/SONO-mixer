@@ -27,9 +27,7 @@ public sealed class Fader : Panel
 
     private Border? _track;
     private Border? _fill;
-    private Avalonia.Controls.Shapes.Path? _wave;
-    private DispatcherTimer? _waveTimer;
-    private double _phase;
+    private Border? _glow;
     private bool _dragging;
 
     /// <summary>Live output level 0..1 for this channel (engine peak). Drives wave amplitude.</summary>
@@ -73,19 +71,15 @@ public sealed class Fader : Panel
         // square top corners: the wave surface must join the fill flush (a domed top
         // leaves notches at the sides where the wave can't reach)
         _fill = new Border { CornerRadius = new CornerRadius(0, 0, 22, 22), IsHitTestVisible = false };
-        _wave = new Avalonia.Controls.Shapes.Path
+        _glow = new Border
         {
             IsHitTestVisible = false,
-            Opacity = 0.9,
+            CornerRadius = new CornerRadius(3),
         };
         Children.Add(_track);
         Children.Add(_fill);
-        Children.Add(_wave);
+        Children.Add(_glow);
         UpdateColors();
-
-        // wave animation: only ticks when there's sound to show
-        _waveTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
-        _waveTimer.Tick += (_, _) => { _phase += 0.35; InvalidateArrange(); };
     }
 
     private void UpdateColors()
@@ -103,14 +97,12 @@ public sealed class Fader : Panel
                     new GradientStop(Color.FromArgb(235, c.R, c.G, c.B), 1),
                 },
             };
-            // wave surface: same color as the fill's TOP gradient stop, no border —
-            // the wave reads as part of the bar, not a separate blob
-            if (_wave is not null)
-            {
-                _wave.Fill = new ImmutableSolidColorBrush(Color.FromArgb(235, c.R, c.G, c.B));
-                _wave.Stroke = null;
-                _wave.StrokeThickness = 0;
-            }
+            if (_glow is not null)
+                _glow.Background = new ImmutableSolidColorBrush(Color.FromArgb(
+                    255,
+                    (byte)Math.Min(255, c.R + 70),
+                    (byte)Math.Min(255, c.G + 70),
+                    (byte)Math.Min(255, c.B + 70)));
         }
         else
         {
@@ -141,44 +133,22 @@ public sealed class Fader : Panel
         ArrangeChild(_track, x, 0, trackW, h);
         ArrangeChild(_fill, x, h - fillH, trackW, fillH);
 
-        // water surface: sine wave across the fill's top edge; amplitude scales with Level,
-        // phase animates so it sloshes. Skipped entirely when idle (no timer, no cost).
+        // level glow: a soft light band at the fill's surface, brightness/thickness
+        // following the live output level — the fill looks "hot" where sound comes out
         double level = Math.Clamp(Level, 0, 1);
-        bool timerShouldRun = level > 0.02 && fillH > 20 && _track is not null;
-        if (timerShouldRun && _waveTimer is not null && !_waveTimer.IsEnabled) _waveTimer.Start();
-        if (!timerShouldRun && _waveTimer is not null && _waveTimer.IsEnabled) _waveTimer.Stop();
-
-        if (_wave is not null)
+        if (_glow is not null)
         {
-            if (!timerShouldRun)
+            if (level > 0.02 && fillH > 10)
             {
-                _wave.Data = null;
+                double glowH = 4 + level * 8;                 // 4–12 px tall
+                double surfaceY = h - fillH;
+                ArrangeChild(_glow, x, surfaceY - glowH / 2, trackW, glowH);
+                _glow.IsVisible = true;
+                _glow.Opacity = 0.35 + level * 0.5;           // 35–85%
             }
             else
             {
-                // wave height follows the channel VOLUME (the slider position itself)
-                double volFrac = Math.Clamp((Value - Minimum) / Math.Max(0.001, Maximum - Minimum), 0, 1);
-                double amp = 2.0 + Math.Sqrt(volFrac) * 10.0;
-                double surfaceY = h - fillH;
-                var geo = new StreamGeometry();
-                using (var ctx = geo.Open())
-                {
-                    // crest band ABOVE the fill's top edge: the liquid bulges up past the
-                    // flat fill line — visible against the track background
-                    ctx.BeginFigure(new Point(x, surfaceY), true);
-                    int steps = 14;
-                    for (int i = 1; i <= steps; i++)
-                    {
-                        double t = (double)i / steps;
-                        double wx = x + trackW * t;
-                        double wy = surfaceY - Math.Max(1.5, amp) - Math.Sin(t * Math.PI * 2.4 + _phase) * amp * 0.8;
-                        ctx.LineTo(new Point(wx, wy));
-                    }
-                    ctx.LineTo(new Point(x + trackW, surfaceY));
-                    ctx.EndFigure(true);
-                }
-                _wave.Data = geo;
-                ArrangeChild(_wave, 0, 0, w, h);
+                _glow.IsVisible = false;
             }
         }
 
