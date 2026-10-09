@@ -103,7 +103,7 @@ public sealed class Fader : Panel
         double w = finalSize.Width;
         if (h < 1 || _track is null || _fill is null) return finalSize;
 
-        double trackW = 60;
+        double trackW = 76;
         double x = Math.Max(0, (w - trackW) / 2);
 
         double range = Maximum - Minimum;

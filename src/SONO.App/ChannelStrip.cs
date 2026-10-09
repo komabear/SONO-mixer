@@ -83,7 +83,7 @@ public sealed class ChannelStrip : Border
         {
             Minimum = 0,
             Maximum = 100,
-            Width = 72,
+            Width = 88,
             VerticalAlignment = VerticalAlignment.Stretch,
             HorizontalAlignment = HorizontalAlignment.Center,
         };
@@ -315,10 +315,8 @@ public sealed class ChannelStrip : Border
         _count.Foreground = B(p.Muted);
         _fader.GroupColor = GroupHex;
         _muteBtn.Background = TintBrush(GroupHex, _ch.Muted ? 0.45 : 0.22);
-        // hotkey rows: window-background tone with a dark blend of the group color —
-        // always a DARKER shade of the channel color, per theme
-        var darker = DarkerBlend(GroupHex, 0.55f);
-        foreach (var b in _hkRowBorders) b.Background = darker;
+        // hotkey rows: transparent (no background) — text follows the theme text color
+        foreach (var b in _hkRowBorders) b.Background = Brushes.Transparent;
         _hkDown.BackgroundOverride = null;
         _hkUp.BackgroundOverride = null;
         _hkMute.BackgroundOverride = null;
