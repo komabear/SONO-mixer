@@ -159,11 +159,11 @@ public sealed class Fader : Panel
         // SENSITIVITY: steep gamma on the RAW level — Windows session peaks for music sit
         // 0.4..1.0, and ^2.5 spreads them across the bar: quiet parts ~0.1, average ~0.4,
         // hits 1.0.
-        // LERP: exponential chase toward the live level (25% of the remaining gap per
+        // LERP: exponential chase toward the live level (45% of the remaining gap per
         // frame) — soft motion, no snap, symmetric rise/fall. Safe now that the
         // stale-size flash is fixed at the root (empty-rect hiding).
         double target = Math.Pow(Math.Clamp(Level, 0, 1), 2.5);
-        _smoothed += (target - _smoothed) * 0.25;
+        _smoothed += (target - _smoothed) * 0.45;
         if (Math.Abs(target - _smoothed) < 0.001) _smoothed = target;   // settle exactly
         double level = _smoothed;
 
