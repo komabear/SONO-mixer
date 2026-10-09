@@ -45,4 +45,35 @@
     <Setter Property="Padding" Value="12,6"/>
     <Setter Property="BorderThickness" Value="0"/>
   </Style>
+
+  <!-- ===== theme the FLUENT defaults so light/dark theme switches stay readable ===== -->
+  <Style Selector="CheckBox">
+    <Setter Property="Foreground" Value="{DynamicResource SonoTextBrush}"/>
+  </Style>
+  <Style Selector="CheckBox: pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource SonoTextBrush}"/>
+  </Style>
+  <Style Selector="TextBox">
+    <Setter Property="Foreground" Value="{DynamicResource SonoTextBrush}"/>
+    <Setter Property="Background" Value="{DynamicResource SonoFieldBrush}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource SonoBorderBrush}"/>
+  </Style>
+  <Style Selector="ComboBox">
+    <Setter Property="Foreground" Value="{DynamicResource SonoTextBrush}"/>
+    <Setter Property="Background" Value="{DynamicResource SonoFieldBrush}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource SonoBorderBrush}"/>
+  </Style>
+  <Style Selector="ComboBoxItem">
+    <Setter Property="Foreground" Value="{DynamicResource SonoTextBrush}"/>
+  </Style>
+  <Style Selector="ListBoxItem">
+    <Setter Property="Foreground" Value="{DynamicResource SonoTextBrush}"/>
+  </Style>
+  <Style Selector="MenuItem">
+    <Setter Property="Foreground" Value="{DynamicResource SonoTextBrush}"/>
+  </Style>
+  <Style Selector="ToolTip">
+    <Setter Property="Foreground" Value="{DynamicResource SonoTextBrush}"/>
+    <Setter Property="Background" Value="{DynamicResource SonoElevatedBrush}"/>
+  </Style>
 </Styles>

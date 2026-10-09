@@ -35,6 +35,9 @@ public sealed class SettingsWindow : Window
         Background = MainWindow.Res("SonoBgBrush");
         FontFamily = new FontFamily("Segoe UI Variable Display, Segoe UI, Inter");
         Content = Build();
+        // live theme switch: refresh the window background (snapshot in ctor goes stale)
+        Themes.ThemeManager.ThemeChanged += () =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => Background = MainWindow.Res("SonoBgBrush"));
     }
 
     /// <summary>Fired when a theme is picked here — main window repaints everything.</summary>
@@ -48,6 +51,8 @@ public sealed class SettingsWindow : Window
 
     private Control Build()
     {
+        // every TextBlock inside this window follows the theme text color
+        Resources["TextBlockForeground"] = MainWindow.Res("SonoTextBrush");
         var sp = new StackPanel { Margin = new Thickness(14), Spacing = 10 };
 
         // ================= STARTUP =================

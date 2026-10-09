@@ -54,11 +54,11 @@ public static class ThemeCatalog
         new Palette
         {
             Id = "daylight", Name = "Material Daylight",
-            Bg = "#FAFAFA", Card = "#FFFFFF", Elevated = "#F5F5F5", Field = "#EEEEEE", FieldFocus = "#E0E0E0",
-            Chip = "#E0E0E0", Border = "#E0E0E0", Text = "#212121", Muted = "#757575",
-            Accent = "#6200EE", Danger = "#B00020",
-            Swatches = ["#6200EE", "#03DAC6", "#E91E63", "#FF9800", "#F44336", "#4CAF50", "#2196F3", "#795548"],
-            GroupBgs = ["#9DBEF5", "#A8E6C3", "#F5BCDD", "#F7E3AE"],
+            Bg = "#F3EDF7", Card = "#FFFFFF", Elevated = "#ECE6F0", Field = "#E6E0E9", FieldFocus = "#D9D2E3",
+            Chip = "#E8DEF8", Border = "#CAC4D0", Text = "#1D1B20", Muted = "#49454F",
+            Accent = "#6750A4", Danger = "#B3261E",
+            Swatches = ["#6750A4", "#7D5260", "#386A20", "#B3261E", "#7C4DFF", "#006A6A", "#C4661F", "#4A4459"],
+            GroupBgs = ["#7CACE0", "#8FD6A8", "#E89BC6", "#E8C97D"],   // MD3 tonal pastels
         },
         new Palette
         {
