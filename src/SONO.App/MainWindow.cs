@@ -24,6 +24,7 @@ public sealed class MainWindow : Window
     private readonly StackPanel _appsHost = new() { Spacing = 8 };
     private readonly Dictionary<string, ChannelStrip> _cards = new();
     private readonly Dictionary<AppRowVm, Border> _appRows = new();
+    private readonly Dictionary<AppRowVm, Action> _rowRestylers = new();
     private OsdWindow? _osd;
     private TrayIcon? _tray;
     private readonly Border _ghost = new()
@@ -91,6 +92,7 @@ public sealed class MainWindow : Window
                 SyncOutputBox();
         });
         _vm.Apps.CollectionChanged += (_, _) => Dispatcher.UIThread.Post(SyncAppRows);
+        Themes.ThemeManager.ThemeChanged += () => Dispatcher.UIThread.Post(RefreshRowColors);
         _vm.Channels.CollectionChanged += (_, _) => { };
 
         SyncOutputBox();
@@ -267,6 +269,14 @@ public sealed class MainWindow : Window
 
     private readonly HashSet<AppRowVm> _updateQueued = new();
 
+    /// <summary>Theme changed → re-style EXISTING rows (SyncAppRows only builds new/dead).</summary>
+    private void RefreshRowColors()
+    {
+        foreach (var child in _appsHost.Children)
+            if (child.Tag is AppRowVm vm && _rowRestylers.TryGetValue(vm, out var restyle))
+                restyle();
+    }
+
     private void SyncAppRows()
     {
         // incremental: only build rows for NEW vms, remove dead ones, then reorder —
@@ -275,7 +285,10 @@ public sealed class MainWindow : Window
         {
             var vm = _appsHost.Children[i].Tag as AppRowVm;
             if (vm is null || _vm.Apps.All(r => !ReferenceEquals(r, vm)))
+            {
+                _rowRestylers.Remove(vm!);
                 _appsHost.Children.RemoveAt(i);
+            }
         }
         _appRows.Clear();
         foreach (var child in _appsHost.Children)
@@ -375,14 +388,17 @@ public sealed class MainWindow : Window
             else
             {
                 var hex = ViewModels.GroupColors.Hex(idx);
+                // match the strips: translucent group wash on the card tone (no outline),
+                // solid group color only on the tag text + volume bar
                 root.Background = Tint(hex);
-                root.BorderBrush = Solid(hex);
-                root.BorderThickness = new Thickness(1.2);
+                root.BorderThickness = new Thickness(0);
+                root.BorderBrush = null;
                 tagText.Foreground = Solid(hex);
-                bar.Foreground = Solid(hex);   // volume bar carries the group color
+                bar.Foreground = Solid(hex);
             }
         }
         Update(row);
+        _rowRestylers[row] = () => Update(row);
         row.PropertyChanged += (_, e) =>
         {
             if (_updateQueued.Add(row))
@@ -433,7 +449,7 @@ public sealed class MainWindow : Window
     }
 
     private static IBrush Tint(string hex) =>
-        Color.TryParse(hex, out var c) ? new ImmutableSolidColorBrush(Color.FromArgb(64, c.R, c.G, c.B)) : Brushes.Transparent;
+        Color.TryParse(hex, out var c) ? new ImmutableSolidColorBrush(Color.FromArgb(70, c.R, c.G, c.B)) : Brushes.Transparent;
 
     private static IBrush Solid(string hex) =>
         Color.TryParse(hex, out var c) ? new ImmutableSolidColorBrush(c) : Brushes.White;
