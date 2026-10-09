@@ -249,8 +249,6 @@ public sealed class AudioEngine : IDisposable
         => $"{pid}:{asc.GetSessionIdentifier?.GetHashCode()}";
 
     private readonly Dictionary<string, (AudioSessionControl asc, string? channelId)> _meterSessions = new();
-    private readonly Dictionary<int, ProcessLoopbackMeter> _loopbackMeters = new();
-    private readonly HashSet<string> _zeroMeterSessions = new();
 
     /// <summary>Master switch for ALL level metering (equalizers). When false the fast
     /// meter timer stops and loopback taps are disposed.</summary>
@@ -260,13 +258,7 @@ public sealed class AudioEngine : IDisposable
     {
         if (!MeteringEnabled)
         {
-            // equalizers off: stop taps, report nothing
-            lock (_gate)
-            {
-                foreach (var m in _loopbackMeters.Values) m.Dispose();
-                _loopbackMeters.Clear();
-                _zeroMeterSessions.Clear();
-            }
+            // equalizers off: report nothing
             return;
         }
         try
@@ -279,44 +271,6 @@ public sealed class AudioEngine : IDisposable
                     if (channelId is null) continue;
                     float peak = 0f;
                     try { peak = asc.AudioMeterInformation.MasterPeakValue; } catch { }
-                    // Chromium/CEF sessions report 0 on IAudioMeterInformation forever.
-                    // After 3 consecutive zero reads on an ACTIVE session, fall back to a
-                    // process-loopback tap for that pid (real audio, ~0.2% CPU).
-                    if (peak <= 0.001f)
-                    {
-                        bool active;
-                        try { active = asc.State.ToString().Contains("Active"); } catch { active = false; }
-                        if (active)
-                        {
-                            _zeroMeterSessions.Add(key);
-                            if (_zeroMeterSessions.Count(key2 => key2 == key) >= 0 && !_loopbackMeters.ContainsKey((int)asc.GetProcessID))
-                            {
-                                try
-                                {
-                                    var meter = new ProcessLoopbackMeter((int)asc.GetProcessID);
-                                    meter.Start();
-                                    _loopbackMeters[(int)asc.GetProcessID] = meter;
-                                }
-                                catch { }
-                            }
-                            if (_loopbackMeters.TryGetValue((int)asc.GetProcessID, out var lb))
-                                peak = (float)lb.Peak;
-                        }
-                    }
-                    else
-                    {
-                        // real meter works — drop any tap we opened for this pid
-                        int pid = (int)asc.GetProcessID;
-                        if (_loopbackMeters.TryGetValue(pid, out var lb2)) { lb2.Dispose(); _loopbackMeters.Remove(pid); }
-                        _zeroMeterSessions.Remove(key);
-                    }
-                    // session meters are PRE-volume: a zeroed/muted channel still reports
-                    // full-scale peaks — zero them so the UI doesn't flash
-                    if (_touched.TryGetValue(key, out var enforced))
-                    {
-                        if (enforced.Mute) peak = 0f;
-                        else peak *= enforced.Vol;
-                    }
                     if (peak > 0f)
                         result[channelId] = Math.Max(peak, result.GetValueOrDefault(channelId));
                 }
