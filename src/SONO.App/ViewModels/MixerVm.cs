@@ -69,35 +69,10 @@ public sealed class MixerVm : ObservableObject
             lock (Settings) return Settings.Channels.ToList();
         });
         _engine.Tick += OnTick;
-        _engine.LevelsTick += levels => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-        {
-            foreach (var ch in Channels)
-            {
-                // absent from the dict = no live session = level 0 (bar must fall, not freeze)
-                ch.SetPeak(levels.TryGetValue(ch.Id, out var pk) ? pk : 0);
-            }
-        });
         _hotkeys.Pressed += OnHotkey;
     }
 
-    public void Start()
-    {
-        lock (Settings) _engine.MeteringEnabled = Settings.ShowEqualizers;
-        _engine.Start();
-    }
-
-    /// <summary>Toggle equalizers on/off live (settings checkbox).</summary>
-    public void SetMeteringEnabled(bool enabled)
-    {
-        lock (Settings) Settings.ShowEqualizers = enabled;
-        Save();
-        _engine.MeteringEnabled = enabled;
-    }
-
-    public bool GetMeteringEnabled()
-    {
-        lock (Settings) return Settings.ShowEqualizers;
-    }
+    public void Start() => _engine.Start();
 
     // ---------------- engine callbacks (threadpool thread!) ----------------
 
@@ -111,14 +86,6 @@ public sealed class MixerVm : ObservableObject
             lock (Settings) { vol = ch.Def.Volume; muted = ch.Def.Muted; }
             ch.UpdateFromEngine(vol, muted);
             ch.SyncApps();
-        }
-        // per-channel peak (max over member sessions) → drives the fader water animation
-        foreach (var ch in Channels)
-        {
-            double peak = 0;
-            foreach (var sess in snap.Sessions)
-                if (sess.ChannelId == ch.Id && sess.Peak > peak) peak = sess.Peak;
-            ch.SetPeak(peak);
         }
         RefreshApps(snap);
     }
@@ -291,7 +258,7 @@ public sealed class MixerVm : ObservableObject
         // show it immediately even if it has no live session (UI thread — Apps is UI-bound)
         Avalonia.Threading.Dispatcher.UIThread.Post(() => Apps.Add(new AppRowVm(new SessionView(
             Key: "pinned:" + exe, Exe: exe, DisplayName: exe, Pid: 0, IsSystem: false,
-            State: "Inactive", ChannelId: null, Volume: 1f, Mute: false, Peak: 0))));
+            State: "Inactive", ChannelId: null, Volume: 1f, Mute: false))));
     }
 
     /// <summary>Apps available for the panel + picker: everything ever seen, not pinned yet.</summary>

@@ -41,17 +41,10 @@ public sealed class AudioEngine : IDisposable
     /// <summary>Engine pulls the current channel list every tick; call whenever settings change.</summary>
     public void SetChannelSource(Func<IReadOnlyList<ChannelDefinition>> source) => _channelSource = source;
 
-    private System.Threading.Timer? _meterTimer;
-    /// <summary>Fast peak readout (~60ms): channelKey → peak 0..1. Cheap: meter reads on
-    /// cached sessions only, no full reconcile — smooth VU motion.</summary>
-    public event Action<Dictionary<string, float>>? LevelsTick;
-
     public void Start(int periodMs = 600)
     {
         _timer?.Dispose();
         _timer = new System.Threading.Timer(_ => SafeReconcile(), null, 0, periodMs);
-        _meterTimer?.Dispose();
-        _meterTimer = new System.Threading.Timer(_ => SafeLevels(), null, 25, 25);
     }
 
     /// <summary>Immediate reconcile outside the poll (e.g. right after a slider move).
@@ -232,53 +225,18 @@ public sealed class AudioEngine : IDisposable
 
         float curVol = 1f; bool curMute = false;
         try { curVol = asc.SimpleAudioVolume.Volume; curMute = asc.SimpleAudioVolume.Mute; } catch { }
-        float peak = 0f;
-        try { peak = asc.AudioMeterInformation.MasterPeakValue; } catch { }
-        if (_touched.TryGetValue(key, out var enforcedNow))
-        {
-            if (enforcedNow.Mute) peak = 0f; else peak *= enforcedNow.Vol;
-        }
-        _meterSessions[key] = (asc, channelId);
-
         sessions.Add(new SessionView(
             key, exe, PrettyName(asc, pid, exe, title), pid, pid == 0,
-            stateStr.Replace("AudioSessionState", ""), channelId, curVol, curMute, peak));
+            stateStr.Replace("AudioSessionState", ""), channelId, curVol, curMute));
     }
 
     private static string SessionKey(uint pid, AudioSessionControl asc)
         => $"{pid}:{asc.GetSessionIdentifier?.GetHashCode()}";
 
-    private readonly Dictionary<string, (AudioSessionControl asc, string? channelId)> _meterSessions = new();
 
     /// <summary>Master switch for ALL level metering (equalizers). When false the fast
     /// meter timer stops and loopback taps are disposed.</summary>
     public bool MeteringEnabled { get; set; } = true;
-
-    private void SafeLevels()
-    {
-        if (!MeteringEnabled)
-        {
-            // equalizers off: report nothing
-            return;
-        }
-        try
-        {
-            var result = new Dictionary<string, float>();
-            lock (_gate)
-            {
-                foreach (var (key, (asc, channelId)) in _meterSessions)
-                {
-                    if (channelId is null) continue;
-                    float peak = 0f;
-                    try { peak = asc.AudioMeterInformation.MasterPeakValue; } catch { }
-                    if (peak > 0f)
-                        result[channelId] = Math.Max(peak, result.GetValueOrDefault(channelId));
-                }
-            }
-            if (result.Count > 0) LevelsTick?.Invoke(result);
-        }
-        catch { }
-    }
 
     private (string Exe, string Title) Identify(uint pid)
     {

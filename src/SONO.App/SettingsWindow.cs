@@ -102,12 +102,6 @@ public sealed class SettingsWindow : Window
         };
 
         var startupCard = new Border { Classes = { "card" }, Child = new StackPanel { Spacing = 8, Children = { Section("STARTUP"), startWin, startMin } } };
-        // ================= EQUALIZERS =================
-        var eqToggle = new CheckBox { Content = "Show level meters on channel strips" };
-        eqToggle.IsChecked = _vm.GetMeteringEnabled();
-        eqToggle.IsCheckedChanged += (_, _) => _vm.SetMeteringEnabled(eqToggle.IsChecked == true);
-        var eqCard = new Border { Classes = { "card" }, Child = new StackPanel { Spacing = 8, Children = { Section("EQUALIZERS"), eqToggle,
-            new TextBlock { Text = "When off, the equalizer bars are hidden and all metering work stops (zero cost).", Classes = { "muted" }, FontSize = 11, TextWrapping = TextWrapping.Wrap } } } };
 
         // ================= BEHAVIOR =================
         float step;
@@ -386,7 +380,6 @@ public sealed class SettingsWindow : Window
         about.Child = aboutSp;
 
         sp.Children.Add(startupCard);
-        sp.Children.Add(eqCard);
         sp.Children.Add(behaviorCard);
         sp.Children.Add(outputsCard);
         sp.Children.Add(appearanceCard);

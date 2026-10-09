@@ -55,17 +55,6 @@ public sealed class ChannelVm : ObservableObject
     public double Level { get => _level; private set => Set(ref _level, value); }
 
     /// <summary>Called from the engine tick (background thread) — UI reads it via the strip.</summary>
-    private readonly double[] _peakHist = new double[3];
-    private int _peakHistIdx;
-
-    /// <summary>Median-of-3 filter: kills single-tick spikes (system dings, transient
-    /// blips) that otherwise slam the auto-gained bar to 100% for a frame-cluster.</summary>
-    public void SetPeak(double peak)
-    {
-        _peakHist[_peakHistIdx] = Math.Clamp(peak, 0, 1);
-        _peakHistIdx = (_peakHistIdx + 1) % 3;
-        Level = Math.Min(Math.Max(_peakHist[0], _peakHist[1]), _peakHist[2]);
-    }
 
     private string? _volDownKey;
     public string? VolDownKey { get => _volDownKey; private set => Set(ref _volDownKey, value); }
