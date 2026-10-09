@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SONO — Option B: Mixer Strips</title>
+<style>
+  :root {
+    --bg: #141519;
+    --card: #1c1e23;
+    --elevated: #232530;
+    --text: #e8e9ec;
+    --muted: #8b8e98;
+    --game: #7aa2f7;
+    --chat: #9ece6a;
+    --media: #bb9af7;
+    --aux: #e0af68;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d0e11;
+    font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+    color: var(--text);
+    display: flex;
+    gap: 24px;
+    padding: 32px;
+    align-items: flex-start;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .frame {
+    background: var(--bg);
+    border-radius: 14px;
+    padding: 18px;
+    width: 880px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.5);
+  }
+  .titlebar { display: flex; align-items: center; justify-content: space-between; padding: 2px 6px 14px; }
+  .titlebar .name { font-size: 12px; color: var(--muted); letter-spacing: .4px; }
+  .winbtns { color: var(--muted); font-size: 11px; }
+
+  .layout { display: grid; grid-template-columns: 1fr 296px; gap: 14px; }
+
+  /* ---- channel strips: vertical DAW-style lanes ---- */
+  .strips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .strip {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 12px 10px 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    min-height: 420px;
+  }
+  .strip .dot { width: 11px; height: 11px; border-radius: 50%; margin-bottom: 2px; }
+  .strip .dot.game { background: var(--game); } .strip .dot.chat { background: var(--chat); }
+  .strip .dot.media { background: var(--media); } .strip .dot.aux { background: var(--aux); }
+  .strip .nm { font-size: 13px; font-weight: 600; }
+  .strip .mut {
+    width: 30px; height: 22px; border-radius: 6px; font-size: 10px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    letter-spacing: .5px;
+  }
+  .strip .mut.live { background: color-mix(in srgb, var(--game) 25%, var(--card)); color: var(--game); }
+  .strip[data-g="chat"] .mut.live { background: color-mix(in srgb, var(--chat) 25%, var(--card)); color: var(--chat); }
+  .strip[data-g="media"] .mut.live { background: color-mix(in srgb, var(--media) 25%, var(--card)); color: var(--media); }
+  .strip[data-g="aux"] .mut.live { background: color-mix(in srgb, var(--aux) 25%, var(--card)); color: var(--aux); }
+  .strip .mut.dead { background: rgba(255,255,255,.05); color: var(--muted); }
+
+  /* the fader */
+  .fader {
+    flex: 1; width: 34px;
+    background: rgba(255,255,255,.04);
+    border-radius: 17px;
+    position: relative;
+  }
+  .fader .ffill { position: absolute; bottom: 0; left: 0; right: 0; border-radius: 17px; }
+  .strip[data-g="game"]  .ffill { height: 87%; background: linear-gradient(to top, color-mix(in srgb, var(--game) 55%, transparent), var(--game)); }
+  .strip[data-g="chat"]  .ffill { height: 77%; background: linear-gradient(to top, color-mix(in srgb, var(--chat) 55%, transparent), var(--chat)); }
+  .strip[data-g="media"] .ffill { height: 90%; background: linear-gradient(to top, color-mix(in srgb, var(--media) 55%, transparent), var(--media)); }
+  .strip[data-g="aux"]   .ffill { height: 100%; background: linear-gradient(to top, color-mix(in srgb, var(--aux) 55%, transparent), var(--aux)); }
+  .fader .cap {
+    position: absolute; left: 50%; transform: translate(-50%, 50%);
+    width: 30px; height: 16px; border-radius: 5px;
+    background: #2b2d35; border: 1px solid rgba(255,255,255,.14);
+    box-shadow: 0 2px 6px rgba(0,0,0,.5);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .fader .cap::after { content: ''; width: 18px; height: 2px; border-radius: 1px; background: var(--muted); }
+  .strip[data-g="game"]  .cap { bottom: 87%; }
+  .strip[data-g="chat"]  .cap { bottom: 77%; }
+  .strip[data-g="media"] .cap { bottom: 90%; }
+  .strip[data-g="aux"]   .cap { bottom: 100%; margin-bottom: 8px; }
+  .strip .pct { font-size: 13px; font-weight: 600; }
+
+  /* app tiles stacked under the fader */
+  .tiles { display: flex; flex-direction: column; gap: 5px; width: 100%; }
+  .tile {
+    font-size: 11px; padding: 5px 8px; border-radius: 7px;
+    display: flex; align-items: center; gap: 6px; cursor: grab;
+  }
+  .tile .x { margin-left: auto; opacity: .5; font-size: 9px; }
+  .tile.game { background: color-mix(in srgb, var(--game) 17%, var(--card)); color: var(--game); }
+  .tile.chat { background: color-mix(in srgb, var(--chat) 17%, var(--card)); color: var(--chat); }
+  .tile.media { background: color-mix(in srgb, var(--media) 17%, var(--card)); color: var(--media); }
+  .tile .hk { font-size: 9px; color: var(--muted); width: 100%; text-align: center; padding-top: 2px; }
+  .strip .hksum { font-size: 9.5px; color: var(--muted); background: rgba(255,255,255,.04); border-radius: 6px; padding: 3px 6px; width: 100%; text-align: center; cursor: pointer; }
+
+  /* ---- right column ---- */
+  .right { display: flex; flex-direction: column; gap: 12px; }
+  .topbar { display: flex; gap: 8px; }
+  .outpicker {
+    flex: 1; background: var(--card); border-radius: 10px;
+    padding: 9px 12px; display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; color: var(--muted);
+  }
+  .outpicker b { color: var(--text); font-weight: 500; }
+  .gearbtn { width: 36px; background: var(--card); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+
+  .apppanel { background: var(--card); border-radius: 12px; padding: 13px; flex: 1; }
+  .apppanel .hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .apppanel .hdr .t { font-size: 11px; letter-spacing: 1px; color: var(--muted); font-weight: 600; }
+  .addbtn { width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,.08); display: flex; align-items: center; justify-content: center; font-size: 13px; }
+  .hint { font-size: 10.5px; color: var(--muted); font-style: italic; margin-bottom: 10px; }
+  .approw { padding: 9px 10px; border-radius: 9px; margin-bottom: 6px; background: var(--elevated); cursor: grab; }
+  .approw .r1 { display: flex; align-items: center; gap: 8px; }
+  .approw .nm { font-size: 12.5px; font-weight: 500; flex: 1; }
+  .approw .meter { height: 4px; border-radius: 2px; background: rgba(255,255,255,.07); margin-top: 7px; position: relative; overflow: hidden; }
+  .approw .meter i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--muted); }
+  .approw .drag { color: var(--muted); font-size: 11px; letter-spacing: 2px; }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="titlebar">
+      <span class="name">SONO MIXER — OPTION B · MIXER STRIPS</span>
+      <span class="winbtns">— &nbsp;▢ &nbsp;✕</span>
+    </div>
+    <div class="layout">
+      <div class="strips">
+        <div class="strip" data-g="game">
+          <span class="dot game"></span>
+          <span class="nm">Game</span>
+          <span class="mut live">M</span>
+          <div class="fader"><div class="ffill"></div><div class="cap"></div></div>
+          <span class="pct">87%</span>
+          <div class="tiles">
+            <span class="tile game">hermes<span class="x">✕</span></span>
+            <span class="tile game">valorant<span class="x">✕</span></span>
+          </div>
+          <span class="hksum">Ctrl+Alt+1 / +2 / —</span>
+        </div>
+        <div class="strip" data-g="chat">
+          <span class="dot chat"></span>
+          <span class="nm">Chat</span>
+          <span class="mut live">M</span>
+          <div class="fader"><div class="ffill"></div><div class="cap"></div></div>
+          <span class="pct">77%</span>
+          <div class="tiles">
+            <span class="tile chat">discord<span class="x">✕</span></span>
+          </div>
+          <span class="hksum">— / — / Alt+0</span>
+        </div>
+        <div class="strip" data-g="media">
+          <span class="dot media"></span>
+          <span class="nm">Media</span>
+          <span class="mut live">M</span>
+          <div class="fader"><div class="ffill"></div><div class="cap"></div></div>
+          <span class="pct">90%</span>
+          <div class="tiles">
+            <span class="tile media">youtube music<span class="x">✕</span></span>
+            <span class="tile media">chrome<span class="x">✕</span></span>
+          </div>
+          <span class="hksum">Alt+7 / +8 / —</span>
+        </div>
+        <div class="strip" data-g="aux">
+          <span class="dot aux"></span>
+          <span class="nm">Aux</span>
+          <span class="mut dead">M</span>
+          <div class="fader"><div class="ffill"></div><div class="cap"></div></div>
+          <span class="pct">100%</span>
+          <div class="tiles">
+            <span class="tile" style="background:rgba(255,255,255,.04);color:var(--muted);font-style:italic;justify-content:center">drop apps here</span>
+          </div>
+          <span class="hksum">— / — / —</span>
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="topbar">
+          <div class="outpicker"><span>OUTPUT</span><b>Fones de ouvido ⌄</b></div>
+          <div class="gearbtn">⚙</div>
+        </div>
+        <div class="apppanel">
+          <div class="hdr"><span class="t">APPLICATIONS</span><span class="addbtn">+</span></div>
+          <div class="hint">drag a row onto a strip to group it</div>
+          <div class="approw">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Hermes</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:87%"></i></div>
+          </div>
+          <div class="approw">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">VALORANT</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:67%"></i></div>
+          </div>
+          <div class="approw">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Discord</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:77%"></i></div>
+          </div>
+          <div class="approw">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">Chromium</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:100%"></i></div>
+          </div>
+          <div class="approw">
+            <div class="r1"><span class="drag">⠿</span><span class="nm">ShareX</span><span style="color:var(--muted)">⋯</span></div>
+            <div class="meter"><i style="width:0%"></i></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
