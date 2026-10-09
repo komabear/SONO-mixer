@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.Threading;
 using SONO.App.Themes;
 
 namespace SONO.App.Controls;
@@ -29,6 +30,8 @@ public sealed class HotkeyBox : Border
 
     private bool _armed;
     private bool _rightDown;
+    private DispatcherTimer? _timeout;
+    private static HotkeyBox? _armedBox;   // only one capture may be armed app-wide
     private readonly TextBlock _text;
     private readonly Grid _content = new();
 
@@ -146,10 +149,17 @@ public sealed class HotkeyBox : Border
         if (right) return; // clear path handled in released
         if (!_armed)
         {
+            if (_armedBox is not null && !ReferenceEquals(_armedBox, this))
+                _armedBox.Disarm(hotkeyText: null);   // clicking another box cancels the first
             _armed = true;
+            _armedBox = this;
             App.Hotkeys?.Suspend();
             UpdateVisual();
             Focus();
+            // auto-cancel: captures must not linger forever (hotkeys stay suspended!)
+            _timeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            _timeout.Tick += (_, _) => Disarm(hotkeyText: null);
+            _timeout.Start();
         }
         e.Handled = true;
     }
@@ -198,16 +208,19 @@ public sealed class HotkeyBox : Border
         Disarm(text);
     }
 
-    /// <summary>Escape = commit nothing but always resume hotkeys; a commit re-applies fresh bindings.</summary>
     private void Disarm(string? hotkeyText)
     {
+        _timeout?.Stop();
+        _timeout = null;
+        if (ReferenceEquals(_armedBox, this)) _armedBox = null;
         _armed = false;
         App.Hotkeys?.Resume();
         UpdateVisual();
-        if (hotkeyText is not null || HotkeyText is null)
+        if (hotkeyText is not null)
             Committed?.Invoke(hotkeyText);
-        else
-            Committed?.Invoke(null); // Escape with no prior binding
+        else if (HotkeyText is null)
+            Committed?.Invoke(null);   // Escape/timeout with no prior binding → stay empty
+        // else: keep the existing binding untouched
     }
 
     /// <summary>Right-click clears the binding.</summary>
