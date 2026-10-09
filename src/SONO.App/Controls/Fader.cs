@@ -166,9 +166,11 @@ public sealed class Fader : Panel
         // at any volume. Gamma on top for extra spread.
         double target = TargetFrom(Level, _recentMax);
         const double lerpK = 0.22;          // fraction of the remaining gap closed per frame
-        _smoothed += (target - _smoothed) * lerpK;
+        const double maxRise = 0.08;        // hard per-frame rise cap: no single-frame full-bar jumps
+        double lerped = _smoothed + (target - _smoothed) * lerpK;
+        _smoothed = Math.Min(lerped, _smoothed + maxRise);   // fall is free; rise is capped
         if (Math.Abs(target - _smoothed) < 0.001) _smoothed = target;   // settle exactly
-        double level = _smoothed;
+        double level = Math.Clamp(_smoothed, 0, 1);
 
         if (_meter is not null)
         {
@@ -189,7 +191,8 @@ public sealed class Fader : Panel
                     {
                         // advance the lerp even without new engine ticks, stop when settled
                         double tgt = TargetFrom(Math.Clamp(Level, 0, 1), _recentMax);
-                        _smoothed += (tgt - _smoothed) * 0.22;
+                        double stepped = _smoothed + (tgt - _smoothed) * 0.22;
+                        _smoothed = Math.Min(stepped, _smoothed + 0.08);   // same rise cap
                         if (Math.Abs(tgt - _smoothed) < 0.001) { _smoothed = tgt; _fallTimer?.Stop(); _fallTimer = null; }
                         InvalidateArrange();
                     };
