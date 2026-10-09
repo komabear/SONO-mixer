@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Styling;
+using SONO.Core.Diagnostics;
 
 namespace SONO.App.Themes;
 
@@ -55,6 +56,14 @@ public static class ThemeManager
             r["SonoAuxBrush"] = new SolidColorBrush(Color.Parse(p.Swatches[3]));
         }
         r["SonoLogoUri"] = p.LogoUri;
-        ThemeChanged?.Invoke();
+        try
+        {
+            ThemeChanged?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            // one throwing subscriber must not starve the rest of the repaint chain
+            SONO.Core.Diagnostics.Log.Write("ThemeChanged subscriber failed: " + ex);
+        }
     }
 }
