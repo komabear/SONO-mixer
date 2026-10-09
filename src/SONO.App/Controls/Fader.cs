@@ -150,7 +150,7 @@ public sealed class Fader : Panel
         {
             const double inset = 5;          // same border on all four sides
             // whole-pixel height: sub-pixel sizes made the bottom edge wobble ±1px
-            double coreH = Math.Floor(Math.Min(fillH - inset, fillH * level));
+            double coreH = Math.Floor(Math.Min(fillH - inset * 2, fillH * level));   // top AND bottom margin
             if (coreH > 2)
             {
                 double coreW = trackW - inset * 2;
