@@ -165,6 +165,8 @@ public sealed class MixerVm : ObservableObject
 
     // ---------------- user actions (UI thread) ----------------
 
+    private System.Timers.Timer? _saveDebounce;
+
     internal void OnChannelVolumeChanged(ChannelVm ch)
     {
         lock (Settings)
@@ -172,9 +174,21 @@ public sealed class MixerVm : ObservableObject
             ch.Def.Volume = (float)ch.Volume;
             ch.Def.Muted = ch.Muted;
         }
-        Save();
+        // apply to audio FIRST (ReconcileNow = threadpool, no disk in the path),
+        // then persist with a debounce — a settings write blocks the apply otherwise
         _engine.ReconcileNow();
+        ScheduleSave();
         OsdVolume?.Invoke(ch.Id, ch.Volume);
+    }
+
+    /// <summary>Debounced settings write: rapid slider moves produce ONE disk write.</summary>
+    private void ScheduleSave()
+    {
+        _saveDebounce ??= new System.Timers.Timer(500) { AutoReset = false };
+        _saveDebounce.Stop();
+        _saveDebounce.Start();
+        _saveDebounce.Elapsed -= (_, _) => Save();
+        _saveDebounce.Elapsed += (_, _) => Save();
     }
 
     internal void OnChannelMuteChanged(ChannelVm ch)
@@ -184,8 +198,8 @@ public sealed class MixerVm : ObservableObject
             ch.Def.Muted = ch.Muted;
             ch.Def.Volume = (float)ch.Volume;
         }
-        Save();
         _engine.ReconcileNow();
+        ScheduleSave();
         OsdMute?.Invoke(ch.Id, ch.Muted);
     }
 
