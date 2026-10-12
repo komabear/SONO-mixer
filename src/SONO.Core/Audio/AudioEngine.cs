@@ -184,6 +184,7 @@ public sealed class AudioEngine : IDisposable
         string? channelId = null;
         ChannelDefinition? owner = byExe.TryGetValue(exe, out var found) ? found : null;
         if (owner is not null) channelId = owner.Id;
+        SONO.Core.Diagnostics.Log.Write($"attrib: pid={pid} exe='{exe}' path='{PathOf(pid)}' → {(owner is not null ? owner.Name : "(none)")}");
 
         if (owner is not null)
         {
@@ -238,6 +239,24 @@ public sealed class AudioEngine : IDisposable
     /// meter timer stops and loopback taps are disposed.</summary>
     public bool MeteringEnabled { get; set; } = true;
 
+    private readonly Dictionary<uint, string> _pidPathCache = new();
+
+    /// <summary>Full executable path for a pid ('' if unavailable).</summary>
+    private string PathOf(uint pid)
+    {
+        if (_pidPathCache.TryGetValue(pid, out var pth)) return pth;
+        string path = "";
+        try
+        {
+            using var p = Process.GetProcessById((int)pid);
+            path = p.MainModule?.FileName?.ToLowerInvariant() ?? "";
+        }
+        catch { }
+        if (_pidPathCache.Count > 256) _pidPathCache.Clear();
+        _pidPathCache[pid] = path;
+        return path;
+    }
+
     private (string Exe, string Title) Identify(uint pid)
     {
         if (pid == 0) return ("system", "");
@@ -267,7 +286,32 @@ public sealed class AudioEngine : IDisposable
         if (pid == 0) return "System Sounds";
         try { if (!string.IsNullOrWhiteSpace(asc.DisplayName)) return asc.DisplayName; } catch { }
         if (!string.IsNullOrWhiteSpace(title)) return title;
+        // generic Chromium renderer names: brand from the install folder
+        // (root\current\chromium\... shows as "Root"; youtube-music\... as "Youtube Music")
+        if (exe is "chromium" or "chrome" or "cef")
+        {
+            var path = PathOf(pid);
+            foreach (var brand in BrandFromPath(path))
+                return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(brand);
+        }
         return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(exe);
+    }
+
+    /// <summary>Extract a human app name from a Chromium binary's install path —
+    /// Electron layout: install\app-version\name.exe or install\name\chromium\... —
+    /// the folder above the exe is the brand.</summary>
+    private static IEnumerable<string> BrandFromPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) yield break;
+        var parts = path.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        // walk from the exe's folder upward, skip known generic folder names
+        for (int i = parts.Length - 2; i >= 0 && i >= parts.Length - 4; i--)
+        {
+            var folder = parts[i].ToLowerInvariant();
+            if (folder is "chromium" or "windowsx64" or "current" or "app" or "bin")
+                continue;
+            yield return parts[i];
+        }
     }
 
     public void Dispose()
