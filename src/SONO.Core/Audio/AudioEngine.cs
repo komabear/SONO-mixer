@@ -281,7 +281,7 @@ public sealed class AudioEngine : IDisposable
         return v;
     }
 
-    private static string PrettyName(AudioSessionControl asc, uint pid, string exe, string title)
+    private string PrettyName(AudioSessionControl asc, uint pid, string exe, string title)
     {
         if (pid == 0) return "System Sounds";
         try { if (!string.IsNullOrWhiteSpace(asc.DisplayName)) return asc.DisplayName; } catch { }
