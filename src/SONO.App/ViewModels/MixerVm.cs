@@ -184,11 +184,14 @@ public sealed class MixerVm : ObservableObject
     /// <summary>Debounced settings write: rapid slider moves produce ONE disk write.</summary>
     private void ScheduleSave()
     {
-        _saveDebounce ??= new System.Timers.Timer(500) { AutoReset = false };
+        if (_saveDebounce is null)
+        {
+            _saveDebounce = new System.Timers.Timer(500) { AutoReset = false };
+            _saveDebounce.Elapsed += (_, _) => Save();   // subscribe ONCE (re-subscribing
+                                             // per call stacked handlers forever)
+        }
         _saveDebounce.Stop();
         _saveDebounce.Start();
-        _saveDebounce.Elapsed -= (_, _) => Save();
-        _saveDebounce.Elapsed += (_, _) => Save();
     }
 
     internal void OnChannelMuteChanged(ChannelVm ch)
