@@ -25,6 +25,7 @@ public sealed class AudioEngine : IDisposable
     private List<MMDevice>? _tempDevices;
     private readonly Dictionary<string, MMDevice> _devices = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, AudioSessionManager> _sessionManagers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _lastSessionRefresh = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SimpleAudioVolume> _volumeCache = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>dev.AudioSessionManager allocates a fresh COM wrapper per call; cache per
@@ -117,8 +118,18 @@ public sealed class AudioEngine : IDisposable
                 {
                     AudioSessionManager? mgr;
                     try { mgr = GetSessionManager(dev); } catch { continue; }
-                    // NAudio caches the session list; refresh so apps that start playing later appear
-                    try { mgr.RefreshSessions(); } catch (Exception rex) { SONO.Core.Diagnostics.Log.Write($"RefreshSessions failed on {dev.FriendlyName}: {rex.Message}"); continue; }
+                    // NAudio caches the session list; refresh so apps that start playing later appear.
+                    // RefreshSessions creates a fresh IAudioSessionEnumerator COM object per call —
+                    // the Windows Audio service allocates server-side state for each one and only
+                    // frees it when the client's RCW is finalized (non-deterministic). Calling it
+                    // every 600ms tick leaked ~150MB/hour in Audiosrv + Gen2 ComWrapper arrays in
+                    // SONO. Rate-limit: 1×/2s per device is plenty for new-session detection.
+                    var nowMs = Environment.TickCount64;
+                    if (!_lastSessionRefresh.TryGetValue(dev.ID, out var last) || nowMs - last >= 2000)
+                    {
+                        _lastSessionRefresh[dev.ID] = nowMs;
+                        try { mgr.RefreshSessions(); } catch (Exception rex) { SONO.Core.Diagnostics.Log.Write($"RefreshSessions failed on {dev.FriendlyName}: {rex.Message}"); continue; }
+                    }
                     var sessions2 = mgr.Sessions;
                     for (int i = 0; i < sessions2.Count; i++)
                     {
