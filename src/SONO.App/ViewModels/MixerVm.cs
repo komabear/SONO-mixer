@@ -74,6 +74,9 @@ public sealed class MixerVm : ObservableObject
 
     public void Start() => _engine.Start();
 
+    /// <summary>Refresh the session list now (window focused — the app list is visible).</summary>
+    public void RefreshSessionsNow() => _engine.RefreshSessionsNow();
+
     // ---------------- engine callbacks (threadpool thread!) ----------------
 
     private void OnTick(EngineSnapshot snap)

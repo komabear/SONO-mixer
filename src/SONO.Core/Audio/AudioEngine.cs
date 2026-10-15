@@ -53,6 +53,15 @@ public sealed class AudioEngine : IDisposable
     /// lookups — never on the UI thread (that was the slider lag). Tick marshals to UI.</summary>
     public void ReconcileNow() => Task.Run(SafeReconcile);
 
+    /// <summary>Force a session-list refresh on the next reconcile (e.g. window focus:
+    /// the app list is only visible then, so data must be fresh at that moment).</summary>
+    private long _forceRefreshAt;
+    public void RefreshSessionsNow()
+    {
+        _forceRefreshAt = Environment.TickCount64;
+        ReconcileNow();
+    }
+
     /// <summary>Per-app volume/mute for apps NOT in any channel (right-panel sliders). exe lower-case.</summary>
     public void SetIndependentVolume(string exe, float? vol, bool? mute)
     {
@@ -123,9 +132,10 @@ public sealed class AudioEngine : IDisposable
                     // the Windows Audio service allocates server-side state for each one and only
                     // frees it when the client's RCW is finalized (non-deterministic). Calling it
                     // every 600ms tick leaked ~150MB/hour in Audiosrv + Gen2 ComWrapper arrays in
-                    // SONO. Rate-limit: 1×/2s per device is plenty for new-session detection.
+                    // SONO. Rate-limit: 1×/5s background + instant on window focus.
                     var nowMs = Environment.TickCount64;
-                    if (!_lastSessionRefresh.TryGetValue(dev.ID, out var last) || nowMs - last >= 2000)
+                    var minInterval = nowMs < _forceRefreshAt ? 0 : 5000;   // focus = instant; background discovery 1x/5s
+                    if (!_lastSessionRefresh.TryGetValue(dev.ID, out var last) || nowMs - last >= minInterval)
                     {
                         _lastSessionRefresh[dev.ID] = nowMs;
                         try { mgr.RefreshSessions(); } catch (Exception rex) { SONO.Core.Diagnostics.Log.Write($"RefreshSessions failed on {dev.FriendlyName}: {rex.Message}"); continue; }
