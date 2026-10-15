@@ -8,6 +8,7 @@ using Avalonia.VisualTree;
 using Avalonia.Media.Imaging;
 using SONO.App.Controls;
 using SONO.App.Themes;
+using SONO.Core.Audio;
 using SONO.App.ViewModels;
 using SONO.Core.SystemIntegrations;
 
@@ -158,9 +159,8 @@ public sealed class SettingsWindow : Window
             List<OutputVm> all;
             try
             {
-                using var enumr = new NAudio.CoreAudioApi.MMDeviceEnumerator();
-                all = enumr.EnumerateAudioEndPoints(NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.DeviceState.Active)
-                    .Select(d => { var vm = new OutputVm(d.ID, d.FriendlyName); d.Dispose(); return vm; })
+                all = NativeSessionEnumerator.ActiveRenderDevices()
+                    .Select(d => new OutputVm(d.Id, d.Name))
                     .OrderBy(o => o.Name, StringComparer.OrdinalIgnoreCase)
                     .ToList();
             }
