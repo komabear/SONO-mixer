@@ -101,6 +101,7 @@ public sealed class MainWindow : Window
         SyncAppRows();
         _status.Text = _vm.StatusText;
 
+        Activated += (_, _) => _vm.RefreshSessionsNow();
         Closing += OnClosing;
         Closed += OnClosed;
         AddHandler(PointerMovedEvent, OnPointerMoved, RoutingStrategies.Tunnel);   // ghost follow (tunnel: beats children)

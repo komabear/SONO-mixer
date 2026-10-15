@@ -8,6 +8,7 @@ using Avalonia.VisualTree;
 using Avalonia.Media.Imaging;
 using SONO.App.Controls;
 using SONO.App.Themes;
+using SONO.Core.Audio;
 using SONO.App.ViewModels;
 using SONO.Core.SystemIntegrations;
 
@@ -158,9 +159,8 @@ public sealed class SettingsWindow : Window
             List<OutputVm> all;
             try
             {
-                using var enumr = new NAudio.CoreAudioApi.MMDeviceEnumerator();
-                all = enumr.EnumerateAudioEndPoints(NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.DeviceState.Active)
-                    .Select(d => { var vm = new OutputVm(d.ID, d.FriendlyName); d.Dispose(); return vm; })
+                all = NativeSessionEnumerator.ActiveRenderDevices()
+                    .Select(d => new OutputVm(d.Id, d.Name))
                     .OrderBy(o => o.Name, StringComparer.OrdinalIgnoreCase)
                     .ToList();
             }
@@ -368,7 +368,7 @@ public sealed class SettingsWindow : Window
         // ================= ABOUT =================
         var about = new Border { Classes = { "card" }, Padding = new Thickness(14), CornerRadius = new CornerRadius(12) };
         var aboutSp = new StackPanel { Spacing = 6 };
-        aboutSp.Children.Add(new TextBlock { Text = "SONO 3.2.2", FontSize = 16, FontWeight = FontWeight.Bold });
+        aboutSp.Children.Add(new TextBlock { Text = "SONO 3.3.0", FontSize = 16, FontWeight = FontWeight.Bold });
         aboutSp.Children.Add(new TextBlock { Text = Desc, TextWrapping = TextWrapping.Wrap, Classes = { "muted" }, FontSize = 12 });
         var link = new Button { Content = "github.com/komabear/SONO-mixer", Classes = { "sono" }, Padding = new Thickness(8, 4) };
         link.Click += async (_, _) =>

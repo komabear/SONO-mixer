@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using NAudio.CoreAudioApi;
 using SONO.Core.Audio;
 using SONO.Core.Settings;
 
@@ -73,6 +72,9 @@ public sealed class MixerVm : ObservableObject
     }
 
     public void Start() => _engine.Start();
+
+    /// <summary>Refresh the session list now (window focused — the app list is visible).</summary>
+    public void RefreshSessionsNow() => _engine.RefreshSessionsNow();
 
     // ---------------- engine callbacks (threadpool thread!) ----------------
 
@@ -341,19 +343,20 @@ public sealed class MixerVm : ObservableObject
         string? currentId = null;
         try
         {
-            using var enumr = new MMDeviceEnumerator();
-            var def = enumr.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
-            currentId = def?.ID;
-            def?.Dispose();
-            foreach (var dev in enumr.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
+            string defId = "";
+            string defName = "";
+            // no error surfaced from native enumeration; fall through to the empty-list path
+            var devices = NativeSessionEnumerator.ActiveRenderDevices();
+            NativeSessionEnumerator.EnumerateAllRenderSessions(out defId, out defName, out _);
+            currentId = defId.Length > 0 ? defId : null;
+            foreach (var (id, name) in devices)
             {
                 // visibility filter: hidden ids don't show on the dropdown (current default always visible)
-                bool isCurrent = currentId is not null && dev.ID == currentId;
+                bool isCurrent = currentId is not null && id == currentId;
                 bool hidden;
-                lock (Settings) hidden = Settings.HiddenOutputs.Contains(dev.ID, StringComparer.OrdinalIgnoreCase);
-                if (hidden && !isCurrent) { dev.Dispose(); continue; }
-                list.Add(new OutputVm(dev.ID, dev.FriendlyName));
-                dev.Dispose();
+                lock (Settings) hidden = Settings.HiddenOutputs.Contains(id, StringComparer.OrdinalIgnoreCase);
+                if (hidden && !isCurrent) continue;
+                list.Add(new OutputVm(id, name));
             }
         }
         catch (Exception ex)
