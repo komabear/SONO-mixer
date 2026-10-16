@@ -4,7 +4,7 @@
 ; through Windows' own session APIs.
 
 #define MyAppName "SONO Mixer"
-#define MyAppVersion "3.3.0"
+#define MyAppVersion "3.3.1"
 #define MyAppPublisher "komabear"
 #define MyAppExeName "SONO.App.exe"
 
@@ -36,8 +36,13 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; the installer writing HKCU while elevated (could land in a different user's hive).
 
 [Files]
-Source: "dist\SONO-Mixer\SONO.App.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\SONO-Mixer\Assets\*"; DestDir: "{app}\Assets"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Package the PUBLISH OUTPUT directly (self-contained single-dir build).
+; NEVER stage into dist\SONO-Mixer first — that indirection shipped a v3.3.1-labeled
+; installer with stale 3.2.2 binaries inside (the folder wasn't rebuilt, the version
+; metadata was). The first line installs the exe explicitly; the second copies the
+; rest of publish\ (all DLLs + Assets) recursively.
+Source: "src\SONO.App\bin\Release\net10.0-windows\win-x64\publish\SONO.App.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "src\SONO.App\bin\Release\net10.0-windows\win-x64\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
