@@ -38,7 +38,7 @@ public sealed class SettingsWindow : Window
         FontFamily = new FontFamily("Segoe UI Variable Display, Segoe UI, Inter");
         Content = Build();
         // live theme switch: refresh window bg + every Fluent control that ignores DynamicResource
-        Themes.ThemeManager.ThemeChanged += () =>
+        Action onThemeChanged = () =>
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
                 try
@@ -61,6 +61,17 @@ public sealed class SettingsWindow : Window
                 }
                 catch (Exception ex) { SONO.Core.Diagnostics.Log.Write("settings restyle: " + ex.Message); }
             });
+        Themes.ThemeManager.ThemeChanged += onThemeChanged;
+        // ThemeChanged is a static event: without the unsubscribe, every Settings window ever
+        // opened stayed alive (and kept restyling itself) for the rest of the process.
+        // Dropping the content detaches the controls inside, which lets them release their
+        // own subscriptions as well — the hotkey boxes listen to the same event, and a closed
+        // window does not detach its children by itself.
+        Closed += (_, _) =>
+        {
+            Themes.ThemeManager.ThemeChanged -= onThemeChanged;
+            Content = null;
+        };
     }
 
     /// <summary>Fired when a theme is picked here — main window repaints everything.</summary>
@@ -80,8 +91,15 @@ public sealed class SettingsWindow : Window
 
         // ================= STARTUP =================
         var startWin = new CheckBox { Content = "Start with Windows" };
+        // show what Windows will actually do — the HKCU Run entry for THIS exe — not the
+        // settings flag, which could say "on" with no Run entry behind it
         bool sw;
-        lock (_vm.Settings) sw = _vm.Settings.StartWithWindows;
+        try { sw = Autostart.IsEnabled(); }
+        catch (Exception ex)
+        {
+            SONO.Core.Diagnostics.Log.Write($"autostart query: {ex.Message}");
+            lock (_vm.Settings) sw = _vm.Settings.StartWithWindows;
+        }
         startWin.IsChecked = sw;
         startWin.IsCheckedChanged += (_, _) =>
         {
@@ -209,6 +227,19 @@ public sealed class SettingsWindow : Window
         }
         prevBox.Committed += text => { lock (_vm.Settings) _vm.Settings.OutputPrevHotkey = text; _vm.Save(); _vm.RebindHotkeys(); };
         nextBox.Committed += text => { lock (_vm.Settings) _vm.Settings.OutputNextHotkey = text; _vm.Save(); _vm.RebindHotkeys(); };
+        // flag a binding that is not live (e.g. both boxes set to the same combination)
+        void SyncHotkeyErrors()
+        {
+            prevBox.Error = App.Hotkeys?.ErrorFor(HotkeyManager.OutputPrevChannel, HotkeyManager.OutputPrevSlot);
+            nextBox.Error = App.Hotkeys?.ErrorFor(HotkeyManager.OutputNextChannel, HotkeyManager.OutputNextSlot);
+        }
+        SyncHotkeyErrors();
+        if (App.Hotkeys is { } hotkeys)
+        {
+            Action onRegistrations = () => Avalonia.Threading.Dispatcher.UIThread.Post(SyncHotkeyErrors);
+            hotkeys.RegistrationsChanged += onRegistrations;
+            Closed += (_, _) => hotkeys.RegistrationsChanged -= onRegistrations;
+        }
         var hkRow = new Grid { ColumnDefinitions = { new ColumnDefinition(1, GridUnitType.Star), new ColumnDefinition(1, GridUnitType.Star) } };
         var prevCell = new StackPanel { Spacing = 2, Margin = new Thickness(0, 0, 4, 0), Children = { new TextBlock { Text = "Previous output", Classes = { "muted" }, FontSize = 10 }, prevBox } };
         var nextCell = new StackPanel { Spacing = 2, Margin = new Thickness(4, 0, 0, 0), Children = { new TextBlock { Text = "Next output", Classes = { "muted" }, FontSize = 10 }, nextBox } };
@@ -271,7 +302,7 @@ public sealed class SettingsWindow : Window
                     Swatches = snap.Swatches.ToArray(), GroupBgs = snap.GroupBgs.ToArray(),
                     LogoUri = snap.LogoUri,
                 }
-                : ThemeCatalog.Default;
+                : ThemeCatalog.Default.Clone();   // a copy: this palette is edited in place
             var liveIdx = allThemes.FindIndex(t => t.Id == currentId);
             if (liveIdx >= 0) allThemes[liveIdx] = pristine;
             ThemeManager.Apply(pristine);
@@ -299,8 +330,11 @@ public sealed class SettingsWindow : Window
             };
             view.ColorChanged += (_, e) =>
             {
-                if (get(CurrentTheme()).Equals(e.NewColor.ToString(), StringComparison.OrdinalIgnoreCase))
-                    return;   // no-op color event (theme refresh etc.) — don't save-storm
+                // no-op color event (flyout opening, theme refresh) — don't save-storm.
+                // Compared as colors: the stored text is "#RRGGBB" in the catalog while
+                // Color.ToString() is "#aarrggbb", so comparing the strings never matched.
+                if (Color.TryParse(get(CurrentTheme()), out Color current) && current == e.NewColor)
+                    return;
                 set(CurrentTheme(), e.NewColor);
                 swatch.Background = new SolidColorBrush(e.NewColor);
                 ApplyCurrent();

@@ -82,6 +82,21 @@ public sealed class HotkeyBox : Border
     /// <summary>Optional group-tinted resting background; falls back to theme field color.</summary>
     public IBrush? BackgroundOverride { get; set; }
 
+    private string? _error;
+    /// <summary>Set when the shown binding is NOT live (taken by another program, bound
+    /// twice, unsupported key). The combination is then drawn in the danger color with the
+    /// reason as its tooltip, instead of looking like a working hotkey.</summary>
+    public string? Error
+    {
+        get => _error;
+        set
+        {
+            if (_error == value) return;
+            _error = value;
+            UpdateVisual();
+        }
+    }
+
     private void UpdateVisual()
     {
         bool hasBinding = !string.IsNullOrWhiteSpace(HotkeyText);
@@ -93,9 +108,12 @@ public sealed class HotkeyBox : Border
             : Darker(BackgroundOverride as ImmutableSolidColorBrush, 0.18) ?? emptyFill;
         _text.Text = _armed ? "Waiting for input…"
             : !hasBinding ? "None" : HotkeyText;
+        bool failed = hasBinding && !_armed && _error is not null;
         _text.Foreground = _armed ? BrushOf(ThemeManager.Current.Text) ?? FallbackBrush
             : !hasBinding ? BrushOf(ThemeManager.Current.Muted) ?? FallbackBrush
+            : failed ? BrushOf(ThemeManager.Current.Danger) ?? FallbackBrush
             : BrushOf(ThemeManager.Current.Text) ?? FallbackBrush;
+        ToolTip.SetTip(this, failed ? "Not active: " + _error : null);
         // ✕ only when a binding exists and we're not capturing
         if (_content.Children.Count > 1)
             _content.Children[1].IsVisible = hasBinding && !_armed;
@@ -135,7 +153,6 @@ public sealed class HotkeyBox : Border
     {
         try
         {
-            SONO.Core.Diagnostics.Log.Write("hotkeybox: theme change restyle");
             Avalonia.Threading.Dispatcher.UIThread.Post(UpdateVisual);
         }
         catch (Exception ex) { SONO.Core.Diagnostics.Log.Write("hotkeybox restyle: " + ex.Message); }
@@ -177,17 +194,25 @@ public sealed class HotkeyBox : Border
             return;
 
         var key = e.Key;
-        bool media = key is Key.VolumeUp or Key.VolumeDown or Key.VolumeMute;
+        // consumer-control keys may be bound bare — the same set HotkeyManager.IsMediaVk accepts
+        bool media = key is Key.VolumeUp or Key.VolumeDown or Key.VolumeMute
+            or Key.MediaNextTrack or Key.MediaPreviousTrack or Key.MediaStop or Key.MediaPlayPause;
 
+        // every name produced here must be one HotkeyManager.TryParseKey understands
+        // (several Key values have two enum names, so the ambiguous ones are spelled out)
         string name = key switch
         {
             Key.VolumeUp => "VolumeUp", Key.VolumeDown => "VolumeDown", Key.VolumeMute => "VolumeMute",
+            Key.MediaNextTrack => "MediaNext", Key.MediaPreviousTrack => "MediaPrev",
+            Key.MediaStop => "MediaStop", Key.MediaPlayPause => "MediaPlayPause",
             Key.OemPlus => "OemPlus", Key.OemMinus => "OemMinus",
             Key.Return => "Enter", Key.Prior => "PageUp", Key.Next => "PageDown",
+            Key.Back => "Backspace", Key.CapsLock => "CapsLock", Key.PrintScreen => "PrintScreen",
             Key.OemOpenBrackets => "OemOpenBrackets", Key.OemCloseBrackets => "OemCloseBrackets",
             Key.OemSemicolon => "OemSemicolon", Key.OemQuotes => "OemQuotes",
             Key.OemComma => "OemComma", Key.OemPeriod => "OemPeriod",
             Key.OemQuestion => "OemQuestion", Key.OemPipe => "OemPipe",
+            Key.OemTilde => "OemTilde", Key.OemBackslash => "OemBackslash",
             _ => key.ToString(),
         };
         if (name.Length == 2 && name[0] == 'D' && char.IsDigit(name[1])) name = name[1..];   // D7 → 7
@@ -203,6 +228,10 @@ public sealed class HotkeyBox : Border
         if (mods.HasFlag(KeyModifiers.Meta)) parts.Add("Win");
         parts.Add(name);
         var text = string.Join("+", parts);
+
+        // a key the registrar has no code for would be displayed as bound and never fire:
+        // keep waiting for a usable combination instead of committing it
+        if (!HotkeyManager.TryParse(text, out _, out _, out _)) return;
 
         HotkeyText = text;
         Disarm(text);

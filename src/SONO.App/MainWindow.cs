@@ -337,9 +337,21 @@ public sealed class MainWindow : Window
             Width = 16, Height = 16,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 7, 0),
+            IsVisible = false,   // shown when the icon arrives — extraction runs off the UI thread
         };
-        var icon = AppIcon.Get(row.Exe);
-        if (icon is not null) iconImage.Source = icon; else iconImage.IsVisible = false;
+        string? iconPath = null;
+        void EnsureIcon(AppRowVm r)
+        {
+            var path = r.ExePath;
+            if (string.IsNullOrEmpty(path) || path == iconPath) return;
+            iconPath = path;
+            AppIcon.Request(path, bmp =>
+            {
+                if (iconPath != path) return;   // the row has since moved on to another exe path
+                iconImage.Source = bmp;
+                iconImage.IsVisible = bmp is not null;
+            });
+        }
 
         var nameRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         nameRow.Children.Add(iconImage);
@@ -380,6 +392,7 @@ public sealed class MainWindow : Window
 
         void Update(AppRowVm r)
         {
+            EnsureIcon(r);
             name.Text = r.Name;
             tagText.Text = r.GroupName;
             tag.IsVisible = r.HasGroup;
@@ -608,7 +621,9 @@ public sealed class MainWindow : Window
         foreach (var ch in _vm.Channels) ch.Muted = muted;
     }
 
-    private void ExitApp()
+    /// <summary>Really quit (tray "Exit", or `SONO.App.exe --exit`): closes the window for
+    /// real, which ends the app through the normal exit path.</summary>
+    internal void ExitApp()
     {
         _reallyClosing = true;
         Close();
@@ -618,9 +633,22 @@ public sealed class MainWindow : Window
     {
         WindowState = WindowState.Normal;   // covers minimized AND hidden states
         Show();
-        var wa = Screens.Primary?.WorkingArea ?? new PixelRect(0, 0, 1920, 1080);
-        if (Position.X < wa.X - Width || Position.Y < wa.Y - Height || Position.X > wa.Right || Position.Y > wa.Bottom)
+        // Rescue the window only when its title bar is not reachable on ANY monitor (its
+        // display was unplugged, say). Testing against the primary screen alone pulled the
+        // window off a secondary monitor on every reopen.
+        double scale = DesktopScaling;
+        var titleStrip = new PixelRect(Position.X, Position.Y,
+            Math.Max(1, (int)(ClientSize.Width * scale)), Math.Max(1, (int)(48 * scale)));
+        bool reachable = Screens.All.Any(s =>
+        {
+            var visible = s.WorkingArea.Intersect(titleStrip);
+            return visible.Width >= 120 && visible.Height >= 16;
+        });
+        if (!reachable)
+        {
+            var wa = Screens.Primary?.WorkingArea ?? new PixelRect(0, 0, 1920, 1080);
             Position = new PixelPoint(wa.X + 40, wa.Y + 40);
+        }
         // Activate alone can lose the foreground race right after Show(); blip topmost
         // so the window provably comes to the front, then drop the flag
         Topmost = true;
@@ -631,7 +659,12 @@ public sealed class MainWindow : Window
     private void OnClosing(object? sender, WindowClosingEventArgs e)
     {
         if (_settingsWin is { IsVisible: true }) { _settingsWin.Close(); }
-        if (!_reallyClosing)
+        // Close-to-tray applies only to the user closing the window (X button, Alt+F4).
+        // When the app or Windows itself is shutting down, the close must go through:
+        // cancelling it makes Avalonia answer "no" to Windows' shutdown query, which holds
+        // up shutdown/restart/sign-out and ends with SONO being killed instead of exiting.
+        bool userClosedWindow = e.CloseReason == WindowCloseReason.WindowClosing;
+        if (!_reallyClosing && userClosedWindow)
         {
             e.Cancel = true;
             Hide();

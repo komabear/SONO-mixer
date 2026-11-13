@@ -34,24 +34,23 @@ public static class CustomThemeStore
     {
         try
         {
-            // themes.json holds ALL slots that differ from their catalog defaults (custom slots
-            // always, built-ins only when the user edits them)
-            var customs = themes
-                .Where(t =>
-                {
-                    var builtin = ThemeCatalog.All.FirstOrDefault(b => b.Id == t.Id);
-                    if (builtin is null) return true;                    // custom slot
-                    return !builtin.GroupBgs.SequenceEqual(t.GroupBgs)   // built-in with edits
-                        || builtin.Bg != t.Bg || builtin.Card != t.Card
-                        || builtin.Elevated != t.Elevated || builtin.Text != t.Text;
-                })
-                .ToList();
+            var customs = EditedOnly(themes);
             Directory.CreateDirectory(Dir);
             File.WriteAllText(FilePath, JsonSerializer.Serialize(customs, JsonOpts));
             SONO.Core.Diagnostics.Log.Write($"custom themes saved: {string.Join(", ", customs.Select(t => t.Id + "=" + string.Join("/", t.GroupBgs)))}");
         }
         catch (Exception ex) { SONO.Core.Diagnostics.Log.Write($"custom themes save: {ex.Message}"); }
     }
+
+    /// <summary>What themes.json holds: every slot whose colors differ from its factory
+    /// definition in the catalog (plus anything the catalog does not know). ALL colors are
+    /// compared — the old check skipped Field and Muted, so editing only those was dropped.</summary>
+    internal static List<Palette> EditedOnly(IEnumerable<Palette> themes) =>
+        themes.Where(t =>
+        {
+            var factory = ThemeCatalog.All.FirstOrDefault(b => b.Id == t.Id);
+            return factory is null || !factory.SameColorsAs(t);
+        }).ToList();
 
     /// <summary>Clone a palette into an editable copy with a fresh custom id.</summary>
     public static Palette CloneAsCustom(Palette src, string name)
@@ -69,14 +68,18 @@ public static class CustomThemeStore
         };
     }
 
-    /// <summary>All built-ins + user themes (order: built-ins first).</summary>
+    /// <summary>All built-ins + user themes (order: built-ins first). Every entry is the
+    /// caller's own copy: the settings editor changes these palettes in place, and handing
+    /// out the catalog's shared instances meant an edit also changed the factory reference
+    /// that Save compares against — so the edit looked like "no change" and was never written.</summary>
     public static List<Palette> AllWithCustoms()
     {
         // file entries OVERRIDE catalog slots by Id (custom-1..3 are fixed slots, not additions)
-        var overrides = Load().ToDictionary(t => t.Id);
+        var overrides = new Dictionary<string, Palette>();
+        foreach (var t in Load()) overrides[t.Id] = t;   // tolerate duplicate ids in a hand-edited file
         var result = new List<Palette>();
         foreach (var builtin in ThemeCatalog.All)
-            result.Add(overrides.TryGetValue(builtin.Id, out var o) ? o : builtin);
+            result.Add(overrides.TryGetValue(builtin.Id, out var o) ? o : builtin.Clone());
         return result;
     }
 }

@@ -343,11 +343,12 @@ public sealed class MixerVm : ObservableObject
         string? currentId = null;
         try
         {
-            string defId = "";
-            string defName = "";
             // no error surfaced from native enumeration; fall through to the empty-list path
             var devices = NativeSessionEnumerator.ActiveRenderDevices();
-            NativeSessionEnumerator.EnumerateAllRenderSessions(out defId, out defName, out _);
+            // only the default device is needed here. This used to enumerate every session
+            // and drop the result, leaking two COM references per session on each call
+            // (startup, every tray right-click, every visibility toggle).
+            NativeSessionEnumerator.DefaultRenderDevice(out string defId, out _);
             currentId = defId.Length > 0 ? defId : null;
             foreach (var (id, name) in devices)
             {

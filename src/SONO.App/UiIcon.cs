@@ -78,6 +78,9 @@ public static unsafe class UiIcon
                     new Vector(96, 96),
                     src.PixelSize.Width * 4);
             }
+        // dragging the Text color in the theme editor asks for a new tint on every step —
+        // keep the cache bounded (images already showing a bitmap keep their own reference)
+        if (_tinted.Count >= 48) _tinted.Clear();
         _tinted[key] = tinted;
         return tinted;
     }
@@ -115,12 +118,19 @@ public static unsafe class UiIcon
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
         };
-        // live re-tint when the theme changes (glyph color = theme Text)
-        Themes.ThemeManager.ThemeChanged += () =>
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-            {
-                if (btn.Content is Image i) i.Source = GetTinted(name, ThemeGlyphColor);
-            });
+        // Live re-tint when the theme changes (glyph color = theme Text) — but only while the
+        // button is in a window. ThemeChanged is a static event: a subscription that outlives
+        // the button keeps the button, and the whole app row around it, alive for the rest
+        // of the process. Rows come and go every time an app starts or stops playing.
+        void Retint() => img.Source = GetTinted(name, ThemeGlyphColor);
+        Action onThemeChanged = () => Avalonia.Threading.Dispatcher.UIThread.Post(Retint);
+        btn.AttachedToVisualTree += (_, _) =>
+        {
+            Themes.ThemeManager.ThemeChanged -= onThemeChanged;
+            Themes.ThemeManager.ThemeChanged += onThemeChanged;
+            Retint();   // catch up with a theme change that happened while detached
+        };
+        btn.DetachedFromVisualTree += (_, _) => Themes.ThemeManager.ThemeChanged -= onThemeChanged;
         return btn;
     }
 }

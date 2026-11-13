@@ -14,7 +14,12 @@ public sealed class AppRowVm : ObservableObject
     {
         Exe = s.Exe;
         _name = s.DisplayName;
+        _exePath = s.ExePath;
     }
+
+    private string _exePath;
+    /// <summary>Full path of the executable ("" until a live session reports one) — the row's icon source.</summary>
+    public string ExePath { get => _exePath; private set => Set(ref _exePath, value); }
 
     private double _sessionVol;
     /// <summary>Live session volume 0..1 (read-only display).</summary>
@@ -46,6 +51,7 @@ public sealed class AppRowVm : ObservableObject
     public void Update(SessionView s, string? groupName)
     {
         Name = s.DisplayName;
+        if (s.ExePath.Length > 0) ExePath = s.ExePath;
         SessionVol = s.Volume;
         SessionMuted = s.Mute;
         Group = s.ChannelId;

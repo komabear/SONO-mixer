@@ -25,6 +25,42 @@ public sealed class Palette
     public string[] GroupBgs { get; set; } = ["#5B8DEF", "#65D97A", "#F06BB3", "#F5C453"];
     /// <summary>Logo shown on the Applications panel (avares URI); Miku overrides.</summary>
     public string LogoUri { get; set; } = "avares://SONO.App/Assets/logo.png";
+
+    /// <summary>Independent copy with the same Id and Name. The entries of
+    /// <see cref="ThemeCatalog.All"/> are shared static instances and are the factory
+    /// reference "Reset" and saving compare against — anything that edits a palette must
+    /// edit a copy, never a catalog entry.</summary>
+    public Palette Clone() => new()
+    {
+        Id = Id, Name = Name,
+        Bg = Bg, Card = Card, Elevated = Elevated, Field = Field, FieldFocus = FieldFocus,
+        Chip = Chip, Border = Border, Text = Text, Muted = Muted, Accent = Accent, Danger = Danger,
+        Swatches = Swatches.ToArray(),
+        GroupBgs = GroupBgs.ToArray(),
+        LogoUri = LogoUri,
+    };
+
+    /// <summary>True when every color of both palettes is the same color (compared as
+    /// colors, so "#161822" equals "#ff161822").</summary>
+    public bool SameColorsAs(Palette other) =>
+        Same(Bg, other.Bg) && Same(Card, other.Card) && Same(Elevated, other.Elevated)
+        && Same(Field, other.Field) && Same(FieldFocus, other.FieldFocus) && Same(Chip, other.Chip)
+        && Same(Border, other.Border) && Same(Text, other.Text) && Same(Muted, other.Muted)
+        && Same(Accent, other.Accent) && Same(Danger, other.Danger)
+        && Same(GroupBgs, other.GroupBgs) && Same(Swatches, other.Swatches);
+
+    private static bool Same(string a, string b) =>
+        Color.TryParse(a, out var ca) && Color.TryParse(b, out var cb)
+            ? ca == cb
+            : string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+    private static bool Same(string[] a, string[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++)
+            if (!Same(a[i], b[i])) return false;
+        return true;
+    }
 }
 
 public static class ThemeCatalog
