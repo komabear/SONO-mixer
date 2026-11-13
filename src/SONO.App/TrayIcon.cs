@@ -157,16 +157,34 @@ public sealed class TrayIcon : IDisposable
         }
         _hIcon = LoadIconFromExe();
         SONO.Core.Diagnostics.Log.Write($"tray: hIcon={_hIcon}");
+        if (!TryAdd())
+            SONO.Core.Diagnostics.Log.Write("tray icon add failed");
+    }
+
+    /// <summary>True once the icon is in the notification area.</summary>
+    public bool IsAdded { get; private set; }
+
+    /// <summary>Put the icon in the notification area. Windows can refuse while the shell is
+    /// still starting (right after sign-in), so the owner retries until this returns true.</summary>
+    public bool TryAdd()
+    {
+        if (IsAdded) return true;
+        if (_hwnd == IntPtr.Zero) return false;
         var nid = NewNid();
         var added = Shell_NotifyIcon(NIM_ADD, ref nid);
-        SONO.Core.Diagnostics.Log.Write($"tray: NIM_ADD={added} err={Marshal.GetLastWin32Error()}");
         if (!added)
-            SONO.Core.Diagnostics.Log.Write("tray icon add failed");
-        else
         {
-            nid.uTimeoutOrVersion = NOTIFYICON_VERSION_4;
-            Shell_NotifyIcon(NIM_SETVERSION, ref nid);
+            // a leftover icon from an instance that was killed blocks a new one with the
+            // same identity: clear it and try once more
+            Shell_NotifyIcon(NIM_DELETE, ref nid);
+            added = Shell_NotifyIcon(NIM_ADD, ref nid);
         }
+        SONO.Core.Diagnostics.Log.Write($"tray: NIM_ADD={added} err={Marshal.GetLastWin32Error()}");
+        if (!added) return false;
+        nid.uTimeoutOrVersion = NOTIFYICON_VERSION_4;
+        Shell_NotifyIcon(NIM_SETVERSION, ref nid);
+        IsAdded = true;
+        return true;
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
