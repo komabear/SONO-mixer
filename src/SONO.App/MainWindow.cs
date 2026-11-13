@@ -590,6 +590,22 @@ public sealed class MainWindow : Window
         _tray = new TrayIcon();
         _tray.Click += () => Dispatcher.UIThread.Post(ShowFromTray);
         _tray.MenuRequested += () => Dispatcher.UIThread.Post(ShowTrayMenu);
+        if (_tray.IsAdded) return;
+
+        // Right after sign-in the shell does not always accept icons yet. When SONO starts
+        // minimized the tray icon is the only way in, so keep trying for a while — and if it
+        // never appears, show the mixer rather than run invisibly.
+        int attempts = 0;
+        var retry = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        retry.Tick += (_, _) =>
+        {
+            if (_tray is null || _tray.TryAdd()) { retry.Stop(); return; }
+            if (++attempts < 15) return;
+            retry.Stop();
+            Log.Write("tray icon could not be added — showing the mixer window instead");
+            if (!IsVisible) Show();
+        };
+        retry.Start();
     }
 
     private void ShowTrayMenu()

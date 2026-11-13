@@ -47,12 +47,22 @@ public class App : Application
             var hotkeys = Hotkeys ??= new HotkeyManager();
             var vm = new MixerVm(engine, hotkeys, settings);
             var win = new MainWindow(vm);
-            desktop.MainWindow = win;
 
+            // "Start minimized to tray" is about Windows starting SONO at sign-in (the Run
+            // entry passes --autostart). Opening SONO yourself always shows the mixer —
+            // otherwise a double-click would appear to do nothing.
             bool minimized;
-            lock (settings) minimized = StartMinimized || settings.StartMinimized;
-            if (minimized) win.Hide();
-            else win.Show();
+            lock (settings) minimized = StartedByWindows && settings.StartMinimized;
+
+            // The desktop lifetime shows desktop.MainWindow by itself as soon as startup
+            // completes. So a window that must stay hidden is NOT registered as the main
+            // window: it used to be registered and then hidden, which the lifetime undid
+            // straight away — the setting never had any effect.
+            if (!minimized)
+            {
+                desktop.MainWindow = win;
+                win.Show();
+            }
 
             // second instance → bring to front
             if (ShowSignal is not null)
@@ -97,5 +107,7 @@ public class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    public static bool StartMinimized { get; set; }
+    /// <summary>True when this process was launched by the Windows Run entry (--autostart),
+    /// as opposed to the user opening SONO.</summary>
+    public static bool StartedByWindows { get; set; }
 }

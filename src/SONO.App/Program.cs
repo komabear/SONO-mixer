@@ -61,10 +61,14 @@ internal static class Program
         {
             settings = SettingsStore.Load();
             ConfigureAutostartOnce(settings);
+            // entries from 3.3.2 and earlier carry no --autostart, so a sign-in start could
+            // not be told apart from the user opening SONO; fix our own entry in place
+            if (Autostart.UpgradeEntry())
+                Log.Write("autostart entry updated: it now marks sign-in starts with --autostart");
         }
         catch (Exception ex) { Log.Write($"autostart configure: {ex.Message}"); }
 
-        App.StartMinimized = autostartRequested;
+        App.StartedByWindows = autostartRequested;
         App.ShowSignal = showSignal;
         App.ExitSignal = exitSignal;
         App.InitialSettings = settings;
