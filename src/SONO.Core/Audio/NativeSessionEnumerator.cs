@@ -24,7 +24,6 @@ public static unsafe class NativeSessionEnumerator
     // ---- CLSIDs / IIDs (verified in the SDK headers) ----
     private static readonly Guid CLSID_MMDeviceEnumerator   = new("BCDE0395-E52F-467C-8E3D-C4579291692E");
     private static readonly Guid IID_IMMDeviceEnumerator    = new("A95664D2-9614-4F35-A746-DE8DB63617E6");
-    private static readonly Guid IID_IMMDevice              = new("D666063F-1587-4E43-81F1-B948E807363F");
     private static readonly Guid IID_IAudioSessionManager2  = new("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F");
     private static readonly Guid IID_IAudioSessionControl2  = new("bfb7ff88-7239-4fc9-8fa2-07c950be9c6d");
     private static readonly Guid IID_ISimpleAudioVolume     = new("87CE5498-68D6-44E5-9215-6DA47EF883D8");
@@ -97,12 +96,15 @@ public static unsafe class NativeSessionEnumerator
         return ok;
     }
 
+    // HRESULT GetDefaultAudioEndpoint(EDataFlow, ERole, IMMDevice** ppEndpoint) — exactly three
+    // arguments after `this`, and NO IID (unlike IMMDevice::Activate). Passing an extra pointer
+    // makes the callee write the device into that pointer's target instead of the out slot:
+    // the call then looks like a failure every time AND the returned reference is never released.
     private static bool GetDefaultAudioEndpoint(nint en, out nint device)
     {
         nint dev = 0;
-        var iid = IID_IMMDevice;
-        var fn = (delegate* unmanaged<nint, int, int, Guid*, nint*, int>)Vt(en, 4);
-        bool ok = fn(en, ERender, EConsole, &iid, &dev) == 0 && dev != 0;
+        var fn = (delegate* unmanaged<nint, int, int, nint*, int>)Vt(en, 4);
+        bool ok = fn(en, ERender, EConsole, &dev) == 0 && dev != 0;
         device = dev;
         return ok;
     }
@@ -297,8 +299,51 @@ public static unsafe class NativeSessionEnumerator
     }
 
     /// <summary>Friendly name cache per device id — names do not change while plugged in;
-    /// the IPropertyStore/PropVariant read happens only on first sight of a device.</summary>
+    /// the IPropertyStore/PropVariant read happens only on first sight of a device.
+    /// Read from the engine tick, the startup worker and the UI thread: always under its lock.</summary>
     private static readonly Dictionary<string, string> _deviceNames = new(StringComparer.OrdinalIgnoreCase);
+
+    private static string FriendlyNameCached(nint dev, string id)
+    {
+        lock (_deviceNames)
+            if (_deviceNames.TryGetValue(id, out var cached)) return cached;
+        string name = ReadFriendlyName(dev);
+        if (name.Length > 0)   // a failed read is retried next time instead of sticking as ""
+            lock (_deviceNames) _deviceNames[id] = name;
+        return name;
+    }
+
+    /// <summary>Id + friendly name of the default render endpoint behind an open enumerator.</summary>
+    private static bool ReadDefaultDevice(nint en, out string id, out string name)
+    {
+        id = "";
+        name = "";
+        if (!GetDefaultAudioEndpoint(en, out nint dev)) return false;
+        try
+        {
+            if (!DeviceGetId(dev, out id)) return false;
+            name = FriendlyNameCached(dev, id);
+            return true;
+        }
+        finally { ComRelease(dev); }
+    }
+
+    /// <summary>Id + friendly name of the current default render endpoint (console role), for
+    /// the output pickers. Touches no sessions, so the caller has nothing to release.</summary>
+    public static bool DefaultRenderDevice(out string id, out string name)
+    {
+        id = "";
+        name = "";
+        nint en = 0;
+        try
+        {
+            Guid clsid = CLSID_MMDeviceEnumerator, iidEn = IID_IMMDeviceEnumerator;
+            if (CoCreateInstance(ref clsid, 0, CLSCTX_ALL, ref iidEn, out en) != 0 || en == 0) return false;
+            return ReadDefaultDevice(en, out id, out name);
+        }
+        catch { return false; }
+        finally { ComRelease(en); }
+    }
 
     /// <summary>
     /// Enumerate the sessions of EVERY active render endpoint in one self-contained pass.
@@ -324,19 +369,7 @@ public static unsafe class NativeSessionEnumerator
             }
 
             // default device: id every tick, friendly name cached per id
-            if (GetDefaultAudioEndpoint(en, out nint defDev))
-            {
-                try
-                {
-                    if (DeviceGetId(defDev, out defaultDeviceId) &&
-                        !_deviceNames.TryGetValue(defaultDeviceId, out defaultDeviceName))
-                    {
-                        defaultDeviceName = ReadFriendlyName(defDev);
-                        _deviceNames[defaultDeviceId] = defaultDeviceName;
-                    }
-                }
-                finally { ComRelease(defDev); }
-            }
+            ReadDefaultDevice(en, out defaultDeviceId, out defaultDeviceName);
 
             if (!EnumAudioEndpoints(en, out collection))
             {
@@ -388,14 +421,7 @@ public static unsafe class NativeSessionEnumerator
                 try
                 {
                     if (DeviceGetId(dev, out string id))
-                    {
-                        if (!_deviceNames.TryGetValue(id, out string? name))
-                        {
-                            name = ReadFriendlyName(dev) ?? "";
-                            _deviceNames[id] = name;
-                        }
-                        list.Add((id, name));
-                    }
+                        list.Add((id, FriendlyNameCached(dev, id)));
                 }
                 finally { ComRelease(dev); }
             }

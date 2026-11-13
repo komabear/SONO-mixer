@@ -12,6 +12,8 @@
 
   <Application.Styles>
     <FluentTheme />
+    <!-- ColorView's templates, precompiled inside the ColorPicker assembly (scheme is avares://) -->
+    <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
     <StyleInclude Source="/Themes/Controls.axaml" />
   </Application.Styles>
 </Application>

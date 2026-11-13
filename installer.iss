@@ -56,7 +56,14 @@ var
 begin
   Result := True;
 
-  // make sure SONO isn't running (it holds files and its session controls)
+  // Ask a running SONO to quit through its normal exit path first: that path restores
+  // every app volume/mute SONO changed. Killing it (below) skips the restore and would
+  // leave grouped apps stuck at their group's volume - or muted - with nothing left
+  // installed to undo it. `--exit` returns once the instance is gone (8s at most) and
+  // does nothing when SONO isn't running.
+  Exec(ExpandConstant('{app}\{#MyAppExeName}'), '--exit', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+  // fallback: make sure SONO isn't running (it holds files and its session controls)
   Exec('taskkill.exe', '/IM SONO.App.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(800);
   Exec('taskkill.exe', '/F /IM SONO.App.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);

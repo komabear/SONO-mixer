@@ -1,12 +1,142 @@
 using System.Runtime.InteropServices;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using SONO.Core.Diagnostics;
 
 namespace SONO.App;
 
-/// <summary>Per-exe icon extraction for the Applications panel rows.
-/// SHGetFileInfo resolves the real icon (registry DefaultIcon, overlays, etc.).</summary>
+/// <summary>Per-exe icons for the Applications panel rows.
+/// The audio engine already knows every session's full executable path, so nothing is
+/// searched for: the path goes straight to SHGetFileInfo. (The previous version got only
+/// the bare exe name and swept System32 / Program Files / AppData for it on the UI
+/// thread — about 2.4 s per app, usually without finding it.) Extraction runs on a worker
+/// thread because it can touch a cold disk; the bitmap is handed back on the UI thread.
+/// Results, including "no icon", are cached per path.</summary>
 public static class AppIcon
 {
+    // UI-thread only: both dictionaries are touched from Request and from its posted completion
+    private static readonly Dictionary<string, Bitmap?> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, List<Action<Bitmap?>>> _pending = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Small icon for a full exe path. Call on the UI thread; <paramref name="onReady"/>
+    /// runs on the UI thread too — synchronously when the icon is cached, otherwise once the
+    /// background extraction finishes. It receives null when the file has no usable icon.</summary>
+    public static void Request(string exePath, Action<Bitmap?> onReady)
+    {
+        if (string.IsNullOrWhiteSpace(exePath)) { onReady(null); return; }
+        if (_cache.TryGetValue(exePath, out var hit)) { onReady(hit); return; }
+        if (_pending.TryGetValue(exePath, out var waiters)) { waiters.Add(onReady); return; }
+        _pending[exePath] = new List<Action<Bitmap?>> { onReady };
+
+        Task.Run(() =>
+        {
+            IconPixels? px = null;
+            try { px = LoadPixels(exePath); }
+            catch (Exception ex) { Log.Write($"icon '{exePath}': {ex.Message}"); }
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                Bitmap? bmp = null;
+                try { if (px is not null) bmp = ToBitmap(px); }
+                catch (Exception ex) { Log.Write($"icon bitmap '{exePath}': {ex.Message}"); }
+                _cache[exePath] = bmp;
+                if (!_pending.Remove(exePath, out var list)) return;
+                foreach (var cb in list)
+                {
+                    try { cb(bmp); }
+                    catch (Exception ex) { Log.Write("icon callback: " + ex.Message); }
+                }
+            });
+        });
+    }
+
+    /// <summary>Raw icon image: top-down rows, B-G-R-A byte order, straight (non-premultiplied) alpha.</summary>
+    internal sealed record IconPixels(byte[] Bgra, int Width, int Height);
+
+    /// <summary>Extract the shell's small icon for a file. Safe on any thread.</summary>
+    internal static IconPixels? LoadPixels(string path)
+    {
+        var info = new SHFILEINFO { szDisplayName = "", szTypeName = "" };
+        var res = SHGetFileInfo(path, 0, ref info, (uint)Marshal.SizeOf<SHFILEINFO>(), SHGFI_ICON | SHGFI_SMALLICON);
+        if (res == IntPtr.Zero || info.hIcon == IntPtr.Zero) return null;
+        try { return PixelsFromHIcon(info.hIcon); }
+        finally { DestroyIcon(info.hIcon); }
+    }
+
+    internal static unsafe Bitmap ToBitmap(IconPixels px)
+    {
+        fixed (byte* p = px.Bgra)
+        {
+            // the Bitmap copies the pixels, so the array may move again after this returns
+            return new Bitmap(
+                Avalonia.Platform.PixelFormat.Bgra8888,
+                Avalonia.Platform.AlphaFormat.Unpremul,
+                (IntPtr)p,
+                new Avalonia.PixelSize(px.Width, px.Height),
+                new Avalonia.Vector(96, 96),
+                px.Width * 4);
+        }
+    }
+
+    // ---- HICON → pixels via GetIconInfo + GetDIBits (no WIC / WinForms dependency) ----
+
+    private static IconPixels? PixelsFromHIcon(IntPtr hIcon)
+    {
+        var ii = new ICONINFO();
+        if (!GetIconInfo(hIcon, ref ii)) return null;
+        try
+        {
+            if (ii.hbmColor == IntPtr.Zero) return null;   // monochrome icon: nothing worth drawing
+            if (GetObject(ii.hbmColor, Marshal.SizeOf<BITMAP>(), out var bm) == 0) return null;
+            int w = bm.bmWidth, h = bm.bmHeight;           // the color bitmap is the icon's real size
+            if (w <= 0 || h <= 0 || w > 256 || h > 256) return null;
+
+            var hdc = GetDC(IntPtr.Zero);
+            try
+            {
+                var color = ReadTopDown32(hdc, ii.hbmColor, w, h);
+                if (color is null) return null;
+
+                // icons without an alpha channel come back with alpha 0 everywhere: take
+                // their transparency from the AND mask instead (white = transparent)
+                bool hasAlpha = false;
+                for (int i = 3; i < color.Length; i += 4)
+                    if (color[i] != 0) { hasAlpha = true; break; }
+                if (!hasAlpha)
+                {
+                    var mask = ii.hbmMask != IntPtr.Zero ? ReadTopDown32(hdc, ii.hbmMask, w, h) : null;
+                    for (int i = 0; i < color.Length; i += 4)
+                        color[i + 3] = mask is not null && mask[i] != 0 ? (byte)0 : (byte)255;
+                }
+                return new IconPixels(color, w, h);
+            }
+            finally { ReleaseDC(IntPtr.Zero, hdc); }
+        }
+        finally
+        {
+            if (ii.hbmMask != IntPtr.Zero) DeleteObject(ii.hbmMask);
+            if (ii.hbmColor != IntPtr.Zero) DeleteObject(ii.hbmColor);
+        }
+    }
+
+    /// <summary>Read a GDI bitmap as 32-bit pixels in the layout Avalonia wants: asking for a
+    /// NEGATIVE height makes GDI return top-down rows, and BI_RGB at 32 bpp is B-G-R-A —
+    /// so no row flipping or channel swapping is needed afterwards.</summary>
+    private static byte[]? ReadTopDown32(IntPtr hdc, IntPtr hbmp, int w, int h)
+    {
+        var bmi = new BITMAPINFO();
+        bmi.bmiHeader.biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>();
+        bmi.bmiHeader.biWidth = w;
+        bmi.bmiHeader.biHeight = -h;
+        bmi.bmiHeader.biPlanes = 1;
+        bmi.bmiHeader.biBitCount = 32;
+        bmi.bmiHeader.biCompression = 0;   // BI_RGB
+        var bits = new byte[w * h * 4];
+        return GetDIBits(hdc, hbmp, 0, (uint)h, bits, ref bmi, 0) == 0 ? null : bits;
+    }
+
+    // ---- Win32 ----
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct SHFILEINFO
     {
@@ -14,6 +144,7 @@ public static class AppIcon
         public int iIcon;
         public uint dwAttributes;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string szDisplayName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string szTypeName;
     }
 
     private const uint SHGFI_ICON = 0x100;
@@ -26,104 +157,16 @@ public static class AppIcon
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr hIcon);
 
-    /// <summary>Small (16px) icon for an exe path or bare exe name; null when unavailable.
-    /// Bare names are probed in PATH + common install dirs; results are cached.</summary>
-    public static Avalonia.Media.Imaging.Bitmap? Get(string exeName)
-    {
-        if (_cache.TryGetValue(exeName, out var bmp)) return bmp;
-        var bitmap = LoadBitmap(FindPath(exeName));
-        _cache[exeName] = bitmap;
-        return bitmap;
-    }
-
-    private static readonly Dictionary<string, Avalonia.Media.Imaging.Bitmap?> _cache = new(StringComparer.OrdinalIgnoreCase);
-
-    private static string? FindPath(string exeName)
-    {
-        var name = exeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? exeName : exeName + ".exe";
-        if (File.Exists(name)) return Path.GetFullPath(name);
-
-        var roots = new[]
-        {
-            Environment.GetEnvironmentVariable("SystemRoot") + "\\System32",
-            Environment.GetEnvironmentVariable("ProgramFiles"),
-            Environment.GetEnvironmentVariable("ProgramFiles(x86)"),
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        }.Where(d => !string.IsNullOrEmpty(d));
-
-        foreach (var root in roots)
-        {
-            // direct hit first
-            var direct = Path.Combine(root, name);
-            if (File.Exists(direct)) return direct;
-            // then one recursive sweep (apps nest: Discord\app-1.0.x\Discord.exe etc.)
-            try
-            {
-                var hit = Directory.EnumerateFiles(root, name, SearchOption.AllDirectories).FirstOrDefault();
-                if (hit is not null) return hit;
-            }
-            catch { /* access denied on some subtrees — skip */ }
-        }
-        return null;
-    }
-
-    private static Avalonia.Media.Imaging.Bitmap? LoadBitmap(string? path)
-    {
-        if (path is null) return null;
-        var info = new SHFILEINFO { szDisplayName = "" };
-        var res = SHGetFileInfo(path, 0, ref info, (uint)Marshal.SizeOf<SHFILEINFO>(), SHGFI_ICON | SHGFI_SMALLICON);
-        if (res == IntPtr.Zero || info.hIcon == IntPtr.Zero) return null;
-        try
-        {
-            using var bs = System.IO.MemoryStream.Null;
-            var bmp = FromHIcon(info.hIcon);
-            return bmp;
-        }
-        finally { DestroyIcon(info.hIcon); }
-    }
-
-    private static unsafe Avalonia.Media.Imaging.Bitmap? FromHIcon(IntPtr hIcon)
-    {
-        try
-        {
-            // HICON → BITMAP → pixels → Avalonia bitmap (no WIC/WinForms dependency)
-            if (GetIconBitmapInfo(hIcon, out var bmi, out var colorBytes, out var xorBytes))
-            {
-                int w = bmi.biWidth, h = bmi.biHeight / 2;   // XOR mask is 2× height (color + mask)
-                var pixels = new byte[w * h * 4];
-                // rows are bottom-up BGRA
-                for (int y = 0; y < h; y++)
-                {
-                    int srcRow = (h - 1 - y) * w * 4;
-                    int dstRow = y * w * 4;
-                    for (int x = 0; x < w; x++)
-                    {
-                        pixels[dstRow + 0] = xorBytes[srcRow + 2]; // R
-                        pixels[dstRow + 1] = xorBytes[srcRow + 1]; // G
-                        pixels[dstRow + 2] = xorBytes[srcRow + 0]; // B
-                        pixels[dstRow + 3] = xorBytes[srcRow + 3]; // A
-                    }
-                }
-                fixed (byte* ptr = pixels)
-                {
-                    return new Avalonia.Media.Imaging.Bitmap(
-                        Avalonia.Platform.PixelFormat.Bgra8888,
-                        Avalonia.Platform.AlphaFormat.Unpremul,
-                        (IntPtr)ptr,
-                        new Avalonia.PixelSize(w, h),
-                        new Avalonia.Vector(96, 96),
-                        w * 4);
-                }
-            }
-        }
-        catch (Exception ex) { Log.Write("hicon→bitmap failed: " + ex.Message); }
-        return null;
-    }
-
-    // ---- raw HICON → BITMAP via GetIconInfo + GetDIBits ----
     [StructLayout(LayoutKind.Sequential)]
     private struct ICONINFO { public bool fIcon; public int xHotspot, yHotspot; public IntPtr hbmMask, hbmColor; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BITMAP
+    {
+        public int bmType, bmWidth, bmHeight, bmWidthBytes;
+        public ushort bmPlanes, bmBitsPixel;
+        public IntPtr bmBits;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct BITMAPINFOHEADER
@@ -140,15 +183,14 @@ public static class AppIcon
     private struct BITMAPINFO
     {
         public BITMAPINFOHEADER bmiHeader;
-        public uint bmiColors;   // we ask for BI_RGB 32bpp → no palette needed
+        public uint bmiColors;   // BI_RGB at 32 bpp carries no palette
     }
 
     [DllImport("user32.dll")]
     private static extern bool GetIconInfo(IntPtr hIcon, ref ICONINFO piconinfo);
 
-    [DllImport("gdi32.dll")]
-    private static extern int GetDIBits(IntPtr hdc, IntPtr hbmp, uint start, uint lines,
-        IntPtr bits, ref BITMAPINFO bmi, uint usage);
+    [DllImport("gdi32.dll", EntryPoint = "GetObjectW")]
+    private static extern int GetObject(IntPtr h, int cb, out BITMAP bitmap);
 
     [DllImport("gdi32.dll")]
     private static extern int GetDIBits(IntPtr hdc, IntPtr hbmp, uint start, uint lines,
@@ -162,38 +204,4 @@ public static class AppIcon
 
     [DllImport("gdi32.dll")]
     private static extern bool DeleteObject(IntPtr obj);
-
-    private static bool GetIconBitmapInfo(IntPtr hIcon, out BITMAPINFOHEADER bmi, out byte[] color, out byte[] mask)
-    {
-        bmi = default;
-        color = []; mask = [];
-        var ii = new ICONINFO();
-        if (!GetIconInfo(hIcon, ref ii)) return false;
-        try
-        {
-            var hdc = GetDC(IntPtr.Zero);
-            try
-            {
-                var bmiC = new BITMAPINFO();
-                bmiC.bmiHeader.biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>();
-                bmiC.bmiHeader.biBitCount = 0;   // let GDI fill the layout
-                if (GetDIBits(hdc, ii.hbmColor, 0, 0, IntPtr.Zero, ref bmiC, 0) == 0) return false;
-                bmi = bmiC.bmiHeader;
-                int h = Math.Abs(bmi.biHeight);
-                color = new byte[bmi.biSizeImage == 0 ? w_bytes(bmi) : bmi.biSizeImage];
-                bmiC.bmiHeader.biCompression = 0;   // BI_RGB
-                if (GetDIBits(hdc, ii.hbmColor, 0, (uint)h, color, ref bmiC, 0) == 0) return false;
-                // mask (1bpp) — needed only where alpha is 0; grab for completeness
-                var bmiM = new BITMAPINFO();
-                bmiM.bmiHeader.biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>();
-                mask = new byte[(((bmi.biWidth + 31) / 32) * 4) * h];
-                GetDIBits(hdc, ii.hbmMask, 0, (uint)h, mask, ref bmiM, 0);
-                return true;
-            }
-            finally { ReleaseDC(IntPtr.Zero, hdc); }
-        }
-        finally { DeleteObject(ii.hbmMask); DeleteObject(ii.hbmColor); }
-    }
-
-    private static int w_bytes(BITMAPINFOHEADER bmi) => Math.Abs(bmi.biHeight) * bmi.biWidth * 4;
 }

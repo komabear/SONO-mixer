@@ -116,6 +116,14 @@ public sealed class ChannelStrip : Border
         SyncFromVm(null);
         SyncCount();
 
+        // a binding Windows refused (taken, bound twice, unsupported key) is flagged on its
+        // box — until now the only trace was a line in the log
+        if (App.Hotkeys is { } hotkeys)
+        {
+            hotkeys.RegistrationsChanged += () => Dispatcher.UIThread.Post(SyncHotkeyErrors);
+            SyncHotkeyErrors();
+        }
+
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DragLeaveEvent, OnDragLeave);
         AddHandler(DragDrop.DropEvent, OnDrop);
@@ -177,6 +185,14 @@ public sealed class ChannelStrip : Border
         if (prop is null or nameof(ChannelVm.VolDownKey)) _hkDown.HotkeyText = _ch.VolDownKey;
         if (prop is null or nameof(ChannelVm.VolUpKey)) _hkUp.HotkeyText = _ch.VolUpKey;
         if (prop is null or nameof(ChannelVm.MuteKey)) _hkMute.HotkeyText = _ch.MuteKey;
+    }
+
+    private void SyncHotkeyErrors()
+    {
+        var hotkeys = App.Hotkeys;
+        _hkDown.Error = hotkeys?.ErrorFor(_ch.Id, HotkeySlot.VolDown);
+        _hkUp.Error = hotkeys?.ErrorFor(_ch.Id, HotkeySlot.VolUp);
+        _hkMute.Error = hotkeys?.ErrorFor(_ch.Id, HotkeySlot.Mute);
     }
 
     private void SyncCount()

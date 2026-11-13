@@ -10,7 +10,8 @@ public sealed record SessionView(
     string State,          // "Active" / "Inactive"
     string? ChannelId,     // channel that owns this exe, null = independent
     float Volume,          // current session volume 0..1
-    bool Mute)
+    bool Mute,
+    string ExePath = "")   // full path of the executable, lower-case; "" when unknown (system sounds, pinned rows)
 {
     public bool Owned => ChannelId is not null;
 }

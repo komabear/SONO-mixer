@@ -18,6 +18,8 @@ public sealed class OsdWindow : Window
     private readonly TextBlock _muteTag;
     private readonly Border _track;
     private DispatcherTimer? _hideTimer;
+    private DispatcherTimer? _fadeTimer;
+    private double _volume;
 
     private const int W = 330, H = 100, ScreenMargin = 18;
 
@@ -41,6 +43,9 @@ public sealed class OsdWindow : Window
             Opacity = 0, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         _barFill = new Border { CornerRadius = new CornerRadius(3), HorizontalAlignment = HorizontalAlignment.Left, Height = 8 };
         _track = new Border { Height = 8, CornerRadius = new CornerRadius(3), ClipToBounds = true, Child = _barFill };
+        // subscribed ONCE: this used to be added again on every ShowOsd call, so each
+        // hotkey press (and each fader move) left another handler behind for good
+        _track.SizeChanged += (_, _) => SyncBar();
 
         // top row: name (left) + % (right) — bottom row: full-width bar. Wide rectangle.
         var topRow = new Grid { ColumnDefinitions = { new ColumnDefinition(1, GridUnitType.Star), new ColumnDefinition(GridLength.Auto) } };
@@ -88,13 +93,17 @@ public sealed class OsdWindow : Window
         _pct.Text = $"{(int)Math.Round(volume * 100)}%";
         _muteTag.Opacity = muted ? 1 : 0;
         _barFill.Background = Color.TryParse(colorHex, out var c) ? new SolidColorBrush(c) : Brushes.White;
-        _track.SizeChanged += (_, _) => _barFill.Width = Math.Clamp(volume, 0, 1) * _track.Bounds.Width;
-        _barFill.Width = Math.Clamp(volume, 0, 1) * (_track.Bounds.Width > 0 ? _track.Bounds.Width : 180);
+        _volume = volume;
+        SyncBar();
         ApplyTheme();
         PlaceOnScreen(anchor);
 
         _hideTimer?.Stop();
-        Opacity = 1;   // cancel any in-flight fade
+        // cancel an in-flight fade for real: resetting Opacity alone left its timer running,
+        // so a press during the fade-out got hidden again a few frames later
+        _fadeTimer?.Stop();
+        _fadeTimer = null;
+        Opacity = 1;
         if (!IsVisible && Owner is null) Show();   // first show: unowned (never Show(this) — it becomes its own owner on reuse → crash)
         else if (!IsVisible && Owner is Window w) Show(w);
         _hideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
@@ -107,11 +116,16 @@ public sealed class OsdWindow : Window
         _hideTimer.Start();
     }
 
+    private void SyncBar() =>
+        _barFill.Width = Math.Clamp(_volume, 0, 1) * (_track.Bounds.Width > 0 ? _track.Bounds.Width : 180);
+
     /// <summary>Manual opacity fade (12 steps × ~21 ms ≈ 250 ms) — avoids animation-API churn.</summary>
     private void FadeOutAndHide()
     {
+        _fadeTimer?.Stop();
         int step = 0;
         var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(21) };
+        _fadeTimer = t;   // ShowOsd stops it when the popup is shown again mid-fade
         t.Tick += (_, _) =>
         {
             step++;
@@ -119,6 +133,7 @@ public sealed class OsdWindow : Window
             if (step >= 12)
             {
                 t.Stop();
+                if (ReferenceEquals(_fadeTimer, t)) _fadeTimer = null;
                 Opacity = 1;   // reset for next show
                 Hide();
             }
@@ -132,12 +147,17 @@ public sealed class OsdWindow : Window
         if (screen is null) return;
         var wa = screen.WorkingArea;
 
-        double x = anchor.Contains("left") ? wa.X + ScreenMargin
-                 : anchor.Contains("right") ? wa.X + wa.Width - W - ScreenMargin
-                 : wa.X + (wa.Width - W) / 2;
-        double y = anchor.Contains("top") ? wa.Y + ScreenMargin
-                 : anchor.Contains("bottom") ? wa.Y + wa.Height - H - ScreenMargin
-                 : wa.Y + (wa.Height - H) / 2;
+        // the working area and Position are in physical pixels, while W/H/ScreenMargin are
+        // DIPs: scale them first, or at 125%/150% the popup overhangs the right/bottom edge
+        double scale = screen.Scaling;
+        double w = W * scale, h = H * scale, margin = ScreenMargin * scale;
+
+        double x = anchor.Contains("left") ? wa.X + margin
+                 : anchor.Contains("right") ? wa.X + wa.Width - w - margin
+                 : wa.X + (wa.Width - w) / 2;
+        double y = anchor.Contains("top") ? wa.Y + margin
+                 : anchor.Contains("bottom") ? wa.Y + wa.Height - h - margin
+                 : wa.Y + (wa.Height - h) / 2;
         Position = new PixelPoint((int)x, (int)y);
     }
 
