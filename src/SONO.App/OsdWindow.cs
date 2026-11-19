@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -106,6 +107,7 @@ public sealed class OsdWindow : Window
         Opacity = 1;
         if (!IsVisible && Owner is null) Show();   // first show: unowned (never Show(this) — it becomes its own owner on reuse → crash)
         else if (!IsVisible && Owner is Window w) Show(w);
+        RaiseAboveAllWindows();
         _hideTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
         _hideTimer.Tick += (_, _) =>
         {
@@ -118,6 +120,31 @@ public sealed class OsdWindow : Window
 
     private void SyncBar() =>
         _barFill.Width = Math.Clamp(_volume, 0, 1) * (_track.Bounds.Width > 0 ? _track.Bounds.Width : 180);
+
+    /// <summary>Put the popup at the very top of the always-on-top band, on every show.
+    /// Topmost is applied once, when the window is created, and a non-activating show leaves
+    /// a window wherever it currently sits in the z-order. While the popup is hidden, other
+    /// programs re-stacking windows can leave it under ordinary ones — seen after a few days of
+    /// uptime: still flagged topmost, yet 16 normal windows above it, so every popup opened
+    /// invisibly behind the browser. Re-asserting the position here costs one call per show.</summary>
+    private void RaiseAboveAllWindows()
+    {
+        var hwnd = TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        if (hwnd == IntPtr.Zero) return;
+        if (!SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER)
+            && !_raiseFailureLogged)
+        {
+            _raiseFailureLogged = true;   // once: this runs on every hotkey repeat
+            SONO.Core.Diagnostics.Log.Write($"osd: SetWindowPos(HWND_TOPMOST) failed, error {Marshal.GetLastWin32Error()}");
+        }
+    }
+
+    private bool _raiseFailureLogged;
+    private static readonly IntPtr HWND_TOPMOST = new(-1);
+    private const uint SWP_NOSIZE = 0x0001, SWP_NOMOVE = 0x0002, SWP_NOACTIVATE = 0x0010, SWP_NOOWNERZORDER = 0x0200;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
 
     /// <summary>Manual opacity fade (12 steps × ~21 ms ≈ 250 ms) — avoids animation-API churn.</summary>
     private void FadeOutAndHide()
